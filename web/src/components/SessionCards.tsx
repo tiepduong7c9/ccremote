@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRegistryStore } from '../store';
 import { browserSocket } from '../ws';
 import { nanoid } from 'nanoid';
 import type { AgentnodeView, SessionMeta } from '../lib/protocol';
-import { Plus, X, Server, SquareTerminal, Circle, Copy, Check, Cable } from 'lucide-react';
+import { Plus, X, Server, SquareTerminal, Circle, Copy, Check, Cable, ChevronDown } from 'lucide-react';
 
 // ── Add Node Modal ────────────────────────────────────────────────────────────
 
@@ -94,6 +94,117 @@ function AddAgentnodeModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Recent CWDs ───────────────────────────────────────────────────────────────
+
+const RECENT_CWDS_KEY = 'ccremote:recent-cwds';
+const MAX_RECENT = 8;
+
+function loadRecentCwds(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_CWDS_KEY) || '[]'); } catch { return []; }
+}
+
+export function saveRecentCwd(cwd: string) {
+  const recent = [cwd, ...loadRecentCwds().filter(c => c !== cwd)].slice(0, MAX_RECENT);
+  localStorage.setItem(RECENT_CWDS_KEY, JSON.stringify(recent));
+}
+
+// ── CWD Combobox ──────────────────────────────────────────────────────────────
+
+function CwdCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const recent = loadRecentCwds();
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="input input-bordered flex items-center gap-1 pr-1 font-mono text-sm">
+        <input
+          className="flex-1 bg-transparent outline-none min-w-0"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="~ or /absolute/path"
+          autoFocus
+        />
+        {recent.length > 0 && (
+          <button
+            type="button"
+            className="shrink-0 text-base-content/40 hover:text-base-content transition-colors px-1"
+            onClick={() => setOpen(o => !o)}
+            tabIndex={-1}
+          >
+            <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+      </div>
+      {open && recent.length > 0 && (
+        <ul className="absolute z-50 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg overflow-hidden">
+          {recent.map(r => (
+            <li
+              key={r}
+              className={`px-3 py-1.5 text-sm font-mono cursor-pointer hover:bg-base-200 transition-colors ${value === r ? 'bg-base-200 text-primary' : ''}`}
+              onMouseDown={e => { e.preventDefault(); onChange(r); setOpen(false); }}
+            >{r}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── New Session Modal ─────────────────────────────────────────────────────────
+
+function NewSessionModal({ onClose, onCreate }: { onClose: () => void; onCreate: (cwd: string, name: string) => void }) {
+  const [cwd, setCwd] = useState('~');
+  const [name, setName] = useState('');
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onCreate(cwd.trim() || '~', name.trim());
+    onClose();
+  };
+
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box">
+        <h3 className="font-bold text-lg flex items-center gap-2">
+          <Plus size={18} /> New Session
+        </h3>
+        <form onSubmit={submit}>
+          <div className="form-control mt-4">
+            <label className="label"><span className="label-text">Working directory</span></label>
+            <CwdCombobox value={cwd} onChange={setCwd} />
+          </div>
+          <div className="form-control mt-3">
+            <label className="label"><span className="label-text">Name <span className="text-base-content/40">(optional)</span></span></label>
+            <input
+              className="input input-bordered"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="auto-generated if empty"
+            />
+          </div>
+          <div className="modal-action">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary gap-2">
+              <Plus size={15} /> Create
+            </button>
+          </div>
+        </form>
+      </div>
+      <div className="modal-backdrop" onClick={onClose} />
+    </div>
+  );
+}
+
 // ── Session Card ──────────────────────────────────────────────────────────────
 
 interface CardProps {
@@ -160,10 +271,15 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
         </div>
       )}
 
-      <div className="mt-1.5">
+      <div className="mt-1.5 space-y-1">
         {s.status === 'running' && <span className="badge badge-success badge-xs">running</span>}
         {s.status === 'suspended' && <span className="badge badge-warning badge-xs">suspended</span>}
         {s.status === 'exited' && <span className="badge badge-error badge-xs">exited</span>}
+        {s.cwd && (
+          <div className="text-[10px] text-base-content/40 truncate font-mono" title={s.cwd}>
+            {s.cwd.replace(/^\/home\/[^/]+/, '~')}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -180,12 +296,22 @@ interface Props {
 export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Props) {
   const agentnodes = useRegistryStore(s => [...s.agentnodes.values()]);
   const [showAdd, setShowAdd] = useState(false);
+  const [newSessionAnid, setNewSessionAnid] = useState<string | null>(null);
 
   const handleNew = (anid: string) => {
-    browserSocket.create(anid, nanoid(8), {
+    setNewSessionAnid(anid);
+  };
+
+  const handleCreate = (cwd: string, name: string) => {
+    if (!newSessionAnid) return;
+    saveRecentCwd(cwd);
+    browserSocket.create(newSessionAnid, nanoid(8), {
+      cwd,
+      name: name || undefined,
       cols: Math.floor(window.innerWidth * 0.7 / 8),
       rows: Math.floor(window.innerHeight / 20),
     });
+    setNewSessionAnid(null);
   };
 
   const handleKill = (anid: string, sid: string) => {
@@ -247,6 +373,12 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
       </div>
 
       {showAdd && <AddAgentnodeModal onClose={() => setShowAdd(false)} />}
+      {newSessionAnid && (
+        <NewSessionModal
+          onClose={() => setNewSessionAnid(null)}
+          onCreate={handleCreate}
+        />
+      )}
     </div>
   );
 }

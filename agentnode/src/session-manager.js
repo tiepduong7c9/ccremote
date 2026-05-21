@@ -3,6 +3,8 @@
 const pty = require('node-pty');
 const { nanoid } = require('nanoid');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { randomUUID } = require('crypto');
 const { STATE_DIR, SESSIONS_FILE } = require('./constants');
 
@@ -36,7 +38,8 @@ class SessionManager {
   create(opts = {}) {
     const id = nanoid(8);
     const name = opts.name || id;
-    const cwd = opts.cwd || process.cwd();
+    const rawCwd = opts.cwd || process.cwd();
+    const cwd = path.resolve(rawCwd.replace(/^~(?=$|\/)/, os.homedir()));
     const command = opts.command || 'claude';
     const args = opts.args || [];
 

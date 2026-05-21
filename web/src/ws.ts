@@ -118,6 +118,9 @@ class BrowserSocket {
         registry.setSessions(msg.anid, registry.agentnodes.get(msg.anid)?.sessions.map(s =>
           s.id === msg.sid ? { ...s, status: 'exited' as const } : s
         ) || []);
+        if (registry.selectedAnid === msg.anid && registry.selectedSid === msg.sid) {
+          registry.select(msg.anid, null);
+        }
         break;
 
       case 'server_error':
