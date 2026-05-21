@@ -44,7 +44,7 @@ function AddAgentnodeModal({ onClose }: { onClose: () => void }) {
     <div className="modal modal-open">
       <div className="modal-box">
         <h3 className="font-bold text-lg flex items-center gap-2">
-          <Server size={18} /> Add Agentnode
+          <Server size={18} /> Add Agent Node
         </h3>
         {!result ? (
           <form onSubmit={submit}>
@@ -368,16 +368,16 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2 space-y-4">
+      <div className="flex-1 overflow-y-auto py-4 px-2 space-y-4">
         {agentnodes.length === 0 && (
           <p className="text-center text-base-content/40 text-xs py-10 px-4">
-            No agentnodes. Click + Node to add one.
+            No agent nodes. Click + Node to add one.
           </p>
         )}
 
         {agentnodes.map((node: AgentnodeView) => (
           <div key={node.id} className="border-t border-base-content/10 pt-3 first:border-t-0 first:pt-0">
-            <div className="flex items-center gap-2 px-3 mb-2">
+            <div className="flex items-center gap-2 px-3 mb-3">
               <Server size={15} className="shrink-0 text-base-content/50" />
               <span className="text-xs font-semibold text-base-content/70 truncate uppercase tracking-wider">{node.name}</span>
               <span className={`shrink-0 badge badge-xs font-medium ${node.online ? 'badge-success' : 'badge-ghost text-base-content/40'}`}>
