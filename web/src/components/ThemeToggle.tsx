@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { Sun, Moon } from 'lucide-react';
 
 const STORAGE_KEY = 'ccremote-theme';
 
@@ -30,7 +31,7 @@ export default function ThemeToggle() {
 
   return (
     <button className="btn btn-ghost btn-sm" onClick={toggle} title="Toggle theme">
-      {theme === 'dark' ? '☀️' : '🌙'}
+      {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
     </button>
   );
 }
