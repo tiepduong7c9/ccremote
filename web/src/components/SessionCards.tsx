@@ -3,7 +3,7 @@ import { useRegistryStore } from '../store';
 import { browserSocket } from '../ws';
 import { nanoid } from 'nanoid';
 import type { AgentnodeView, SessionMeta } from '../lib/protocol';
-import { Plus, X, Server, SquareTerminal, Circle, Copy, Check } from 'lucide-react';
+import { Plus, X, Server, SquareTerminal, Circle, Copy, Check, Cable } from 'lucide-react';
 
 // ── Add Node Modal ────────────────────────────────────────────────────────────
 
@@ -195,7 +195,10 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
   return (
     <div className="w-1/3 bg-base-200 flex flex-col border-r border-base-300 h-full">
       <div className="flex items-center justify-between px-4 py-2 border-b border-base-300 shrink-0">
-        <span className="font-bold text-sm">ccremote</span>
+        <div className="flex items-center gap-1.5 font-bold text-sm">
+          <Cable size={15} />
+          Claude Code Remote
+        </div>
         <button className="btn btn-xs btn-ghost gap-1" onClick={() => setShowAdd(true)}>
           <Plus size={13} /> Node
         </button>

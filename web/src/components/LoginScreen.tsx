@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store';
-import { TerminalSquare, KeyRound, LogIn } from 'lucide-react';
+import { Cable, KeyRound, LogIn } from 'lucide-react';
 
 export default function LoginScreen() {
   const login = useAuthStore(s => s.login);
@@ -22,8 +22,8 @@ export default function LoginScreen() {
       <div className="hero-content flex-col">
         <div className="text-center">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <TerminalSquare size={36} className="text-primary" />
-            <h1 className="text-4xl font-bold">ccremote</h1>
+            <Cable size={36} className="text-primary" />
+            <h1 className="text-4xl font-bold">Claude Code Remote</h1>
           </div>
           <p className="py-2 text-base-content/60">Sign in to manage your Claude Code sessions</p>
         </div>
