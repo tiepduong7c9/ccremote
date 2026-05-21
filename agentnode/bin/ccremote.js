@@ -192,6 +192,60 @@ program
     }
   });
 
+// ── config ────────────────────────────────────────────────────────────────────
+const configCmd = program.command('config').description('Manage server connection config');
+
+configCmd
+  .command('show')
+  .description('Show current config (token redacted)')
+  .action(() => {
+    const cfg = require('../src/config').load();
+    const display = { ...cfg };
+    if (display.token) display.token = display.token.slice(0, 8) + '…';
+    console.log(JSON.stringify(display, null, 2));
+  });
+
+configCmd
+  .command('set-server <url>')
+  .description('Set the server WebSocket URL')
+  .action((url) => {
+    require('../src/config').update({ serverUrl: url });
+    console.log(chalk.green('✔ serverUrl set to'), url);
+  });
+
+configCmd
+  .command('set-token <token>')
+  .description('Set the agentnode bearer token')
+  .action((token) => {
+    require('../src/config').update({ token });
+    console.log(chalk.green('✔ token saved'));
+  });
+
+configCmd
+  .command('clear')
+  .description('Clear all config')
+  .action(() => {
+    require('../src/config').save({});
+    console.log(chalk.green('✔ Config cleared'));
+  });
+
+// ── link ──────────────────────────────────────────────────────────────────────
+program
+  .command('link')
+  .description('Restart daemon to apply new server config')
+  .action(async () => {
+    const fs = require('fs');
+    const { PID_FILE } = require('../src/constants');
+    if (fs.existsSync(PID_FILE)) {
+      const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8'), 10);
+      try { process.kill(pid, 'SIGTERM'); } catch (_) {}
+      await new Promise(r => setTimeout(r, 500));
+    }
+    const { ensureDaemon } = require('../src/ensure-daemon');
+    await ensureDaemon();
+    console.log(chalk.green('✔ Daemon restarted with new config'));
+  });
+
 // ── attach implementation ─────────────────────────────────────────────────────
 
 async function doAttach(nameOrId) {

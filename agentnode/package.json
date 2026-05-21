@@ -1,0 +1,16 @@
+{
+  "name": "ccremote",
+  "version": "0.2.0",
+  "description": "Manage Claude Code sessions with node-pty + optional web tunnel",
+  "bin": { "ccremote": "./bin/ccremote.js" },
+  "main": "src/daemon.js",
+  "scripts": { "daemon": "node src/daemon.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "nanoid": "^3.3.7",
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
+  }
+}

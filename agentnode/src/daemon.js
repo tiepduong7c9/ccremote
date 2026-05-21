@@ -5,6 +5,8 @@ const fs = require('fs');
 const SessionManager = require('./session-manager');
 const { encode, MessageParser } = require('./protocol');
 const { STATE_DIR, SOCKET_PATH, PID_FILE } = require('./constants');
+const { load: loadConfig } = require('./config');
+const ServerLink = require('./server-link');
 
 function startDaemon() {
   fs.mkdirSync(STATE_DIR, { recursive: true });
@@ -15,6 +17,14 @@ function startDaemon() {
   fs.writeFileSync(PID_FILE, String(process.pid));
 
   const manager = new SessionManager();
+
+  let link = null;
+  const cfg = loadConfig();
+  if (cfg.serverUrl && cfg.token) {
+    link = new ServerLink({ serverUrl: cfg.serverUrl, token: cfg.token, manager });
+    link.start();
+    process.stderr.write(`ccremote daemon: linking to ${cfg.serverUrl}\n`);
+  }
 
   const server = net.createServer((socket) => {
     let attachedId = null;
@@ -148,6 +158,7 @@ function startDaemon() {
   });
 
   const shutdown = () => {
+    if (link) link.stop();
     manager.suspendAll();
     server.close();
     try { fs.unlinkSync(SOCKET_PATH); } catch (_) {}
