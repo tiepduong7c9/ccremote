@@ -47,7 +47,7 @@ export default function App() {
               <TerminalSquare size={13} className="shrink-0 text-base-content/40" />
               <span className="text-sm text-base-content/70 truncate">{session.name}</span>
               <span
-                className="text-xs text-base-content/50 font-mono truncate hidden sm:block"
+                className="text-xs text-base-content/50 font-mono truncate hidden sm:block translate-y-0.5"
                 title={session.cwd}
               >{session.cwd}</span>
             </div>

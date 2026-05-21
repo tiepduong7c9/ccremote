@@ -244,6 +244,7 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const isExited = s.status === 'exited';
+  const lastFolder = s.cwd ? s.cwd.split('/').filter(Boolean).pop() : null;
 
   const commitRename = () => {
     if (draft.trim()) onRename(draft.trim());
@@ -252,7 +253,7 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
 
   return (
     <div
-      className={`relative group w-44 rounded-lg border p-2 transition-colors select-none
+      className={`relative group w-56 rounded-lg border p-2 transition-colors select-none
         ${isExited
           ? 'opacity-40 cursor-not-allowed border-base-300 bg-base-100'
           : selected
@@ -269,54 +270,61 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
         ><X size={11} /></button>
       )}
 
-      <div className="flex flex-col gap-0.5 pb-5">
-        {editing ? (
-          <input
-            className="input input-xs input-bordered w-full"
-            value={draft}
-            autoFocus
-            onChange={e => setDraft(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={e => {
-              if (e.key === 'Enter') commitRename();
-              if (e.key === 'Escape') setEditing(false);
-            }}
-            onClick={e => e.stopPropagation()}
-          />
-        ) : (
-          <div
-            className="flex items-center gap-1 pr-4"
-            title={s.name || s.id}
-            onDoubleClick={e => {
-              e.stopPropagation();
-              if (!isExited) { setDraft(s.name); setEditing(true); }
-            }}
-          >
-            <ClaudeCodeIcon size={18} />
-            <span className="text-xs font-medium truncate">{s.name || s.id.slice(0, 8)}</span>
-          </div>
-        )}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 pr-4">
+          <ClaudeCodeIcon size={16} />
+          {editing ? (
+            <input
+              className="input input-xs input-bordered flex-1 min-w-0"
+              value={draft}
+              autoFocus
+              onChange={e => setDraft(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={e => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setEditing(false);
+              }}
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <span
+              className="text-sm font-semibold truncate leading-tight"
+              title={s.name || s.id}
+              onDoubleClick={e => {
+                e.stopPropagation();
+                if (!isExited) { setDraft(s.name); setEditing(true); }
+              }}
+            >
+              {lastFolder && <span className="font-normal text-base-content/45">[{lastFolder}]</span>}
+              {lastFolder && ' '}
+              {s.name || s.id.slice(0, 8)}
+            </span>
+          )}
+        </div>
 
         {s.cwd && (
-          <div className="text-[10px] text-base-content/60 truncate font-mono pl-0.5" title={s.cwd}>
+          <div className="text-[10px] text-base-content/60 truncate font-mono" title={s.cwd}>
             {s.cwd.replace(/^\/home\/[^/]+/, '~')}
           </div>
         )}
-      </div>
 
-      <div className="absolute bottom-1.5 right-2 flex items-center gap-1">
-        {s.status === 'running' && <>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-          <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">running</span>
-        </>}
-        {s.status === 'suspended' && <>
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-          <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">suspended</span>
-        </>}
-        {s.status === 'exited' && <>
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
-          <span className="text-[10px] font-medium text-rose-500 dark:text-rose-400">exited</span>
-        </>}
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] text-base-content/35 font-mono leading-none">{s.id}</span>
+          <div className="flex items-center gap-1">
+            {s.status === 'running' && <>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">running</span>
+            </>}
+            {s.status === 'suspended' && <>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+              <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">suspended</span>
+            </>}
+            {s.status === 'exited' && <>
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+              <span className="text-[10px] font-medium text-rose-500 dark:text-rose-400">exited</span>
+            </>}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -399,7 +407,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
               ))}
               {node.online && (
                 <button
-                  className="w-44 rounded-lg border-2 border-dashed border-base-content/25 h-[4.5rem] text-base-content/40 hover:border-primary/50 hover:text-primary/60 transition-colors flex items-center justify-center"
+                  className="w-56 rounded-lg border-2 border-dashed border-base-content/25 h-[4.5rem] text-base-content/40 hover:border-primary/50 hover:text-primary/60 transition-colors flex items-center justify-center"
                   onClick={() => handleNew(node.id)}
                   title="New session"
                 ><Plus size={20} /></button>

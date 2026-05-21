@@ -10,6 +10,34 @@ const { STATE_DIR, SESSIONS_FILE } = require('./constants');
 
 const MAX_SCROLLBACK = 100 * 1024; // 100 KB per session
 
+const ADJECTIVES = [
+  'amber', 'arctic', 'bold', 'brave', 'bright', 'calm', 'cold', 'cool',
+  'crisp', 'dark', 'dawn', 'deep', 'dusk', 'fast', 'fierce', 'frosty',
+  'gentle', 'glad', 'golden', 'grand', 'green', 'grey', 'hidden', 'hollow',
+  'jade', 'keen', 'kind', 'late', 'lively', 'lone', 'lucid', 'mellow',
+  'misty', 'noble', 'north', 'quiet', 'rapid', 'rough', 'royal', 'rustic',
+  'shady', 'sharp', 'silent', 'silver', 'sleek', 'slim', 'solar', 'still',
+  'stout', 'sturdy', 'swift', 'tall', 'teal', 'tiny', 'vivid', 'warm',
+  'white', 'wild', 'wise', 'young',
+];
+
+const ANIMALS = [
+  'bear', 'bison', 'boar', 'buck', 'bull', 'cobra', 'crane', 'crow',
+  'deer', 'dove', 'duck', 'eagle', 'elk', 'falcon', 'finch', 'fox',
+  'frog', 'goat', 'goose', 'hawk', 'heron', 'horse', 'hound', 'ibis',
+  'jay', 'kite', 'lamb', 'lark', 'lion', 'lynx', 'mink', 'moose',
+  'moth', 'mule', 'newt', 'orca', 'otter', 'owl', 'panda', 'pike',
+  'puma', 'quail', 'raven', 'robin', 'seal', 'shark', 'snipe', 'stag',
+  'swan', 'swift', 'tiger', 'toad', 'trout', 'viper', 'vole', 'wasp',
+  'weasel', 'whale', 'wolf', 'wren',
+];
+
+function randomName() {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+  return `${adj}-${animal}`;
+}
+
 class SessionManager {
   constructor() {
     this._sessions = new Map(); // id -> { meta, pty, scrollback, listeners }
@@ -37,7 +65,12 @@ class SessionManager {
 
   create(opts = {}) {
     const id = nanoid(8);
-    const name = opts.name || id;
+    let name = opts.name;
+    if (!name) {
+      const base = randomName();
+      const taken = new Set([...this._sessions.values()].map(s => s.meta.name));
+      name = taken.has(base) ? `${base}-${id.slice(0, 4)}` : base;
+    }
     const rawCwd = opts.cwd || process.cwd();
     const cwd = path.resolve(rawCwd.replace(/^~(?=$|\/)/, os.homedir()));
     const command = opts.command || 'claude';
