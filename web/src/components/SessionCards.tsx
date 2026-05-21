@@ -3,7 +3,7 @@ import { useRegistryStore } from '../store';
 import { browserSocket } from '../ws';
 import { nanoid } from 'nanoid';
 import type { AgentnodeView, SessionMeta } from '../lib/protocol';
-import { Plus, X, Server, SquareTerminal, Circle, Copy, Check, Cable, ChevronDown } from 'lucide-react';
+import { Plus, X, Server, Circle, Copy, Check, Cable, ChevronDown } from 'lucide-react';
 
 // ── Add Node Modal ────────────────────────────────────────────────────────────
 
@@ -88,6 +88,23 @@ function AddAgentnodeModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         )}
+      </div>
+      <div className="modal-backdrop" onClick={onClose} />
+    </div>
+  );
+}
+
+// ── Confirm Modal ─────────────────────────────────────────────────────────────
+
+function ConfirmModal({ message, onConfirm, onClose }: { message: string; onConfirm: () => void; onClose: () => void }) {
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box max-w-sm">
+        <p className="text-sm">{message}</p>
+        <div className="modal-action">
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+          <button className="btn btn-error btn-sm" onClick={() => { onConfirm(); onClose(); }}>Kill</button>
+        </div>
       </div>
       <div className="modal-backdrop" onClick={onClose} />
     </div>
@@ -205,6 +222,14 @@ function NewSessionModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   );
 }
 
+function ClaudeCodeIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg height={size} width={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ flex: 'none' }}>
+      <path clipRule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fillRule="evenodd" />
+    </svg>
+  );
+}
+
 // ── Session Card ──────────────────────────────────────────────────────────────
 
 interface CardProps {
@@ -227,7 +252,7 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
 
   return (
     <div
-      className={`relative group w-36 rounded-lg border p-2 transition-colors select-none
+      className={`relative group w-44 rounded-lg border p-2 transition-colors select-none
         ${isExited
           ? 'opacity-40 cursor-not-allowed border-base-300 bg-base-100'
           : selected
@@ -244,42 +269,54 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
         ><X size={11} /></button>
       )}
 
-      {editing ? (
-        <input
-          className="input input-xs input-bordered w-full"
-          value={draft}
-          autoFocus
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commitRename}
-          onKeyDown={e => {
-            if (e.key === 'Enter') commitRename();
-            if (e.key === 'Escape') setEditing(false);
-          }}
-          onClick={e => e.stopPropagation()}
-        />
-      ) : (
-        <div
-          className="flex items-center gap-1 pr-4"
-          title={s.name || s.id}
-          onDoubleClick={e => {
-            e.stopPropagation();
-            if (!isExited) { setDraft(s.name); setEditing(true); }
-          }}
-        >
-          <SquareTerminal size={11} className="shrink-0 text-base-content/40" />
-          <span className="text-xs font-medium truncate">{s.name || s.id.slice(0, 8)}</span>
-        </div>
-      )}
+      <div className="flex flex-col gap-0.5 pb-5">
+        {editing ? (
+          <input
+            className="input input-xs input-bordered w-full"
+            value={draft}
+            autoFocus
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            onClick={e => e.stopPropagation()}
+          />
+        ) : (
+          <div
+            className="flex items-center gap-1 pr-4"
+            title={s.name || s.id}
+            onDoubleClick={e => {
+              e.stopPropagation();
+              if (!isExited) { setDraft(s.name); setEditing(true); }
+            }}
+          >
+            <ClaudeCodeIcon size={18} />
+            <span className="text-xs font-medium truncate">{s.name || s.id.slice(0, 8)}</span>
+          </div>
+        )}
 
-      <div className="mt-1.5 space-y-1">
-        {s.status === 'running' && <span className="badge badge-success badge-xs">running</span>}
-        {s.status === 'suspended' && <span className="badge badge-warning badge-xs">suspended</span>}
-        {s.status === 'exited' && <span className="badge badge-error badge-xs">exited</span>}
         {s.cwd && (
-          <div className="text-[10px] text-base-content/40 truncate font-mono" title={s.cwd}>
+          <div className="text-[10px] text-base-content/60 truncate font-mono pl-0.5" title={s.cwd}>
             {s.cwd.replace(/^\/home\/[^/]+/, '~')}
           </div>
         )}
+      </div>
+
+      <div className="absolute bottom-1.5 right-2 flex items-center gap-1">
+        {s.status === 'running' && <>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+          <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">running</span>
+        </>}
+        {s.status === 'suspended' && <>
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+          <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">suspended</span>
+        </>}
+        {s.status === 'exited' && <>
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+          <span className="text-[10px] font-medium text-rose-500 dark:text-rose-400">exited</span>
+        </>}
       </div>
     </div>
   );
@@ -297,6 +334,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
   const agentnodes = useRegistryStore(s => [...s.agentnodes.values()]);
   const [showAdd, setShowAdd] = useState(false);
   const [newSessionAnid, setNewSessionAnid] = useState<string | null>(null);
+  const [killTarget, setKillTarget] = useState<{ anid: string; sid: string } | null>(null);
 
   const handleNew = (anid: string) => {
     setNewSessionAnid(anid);
@@ -315,12 +353,12 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
   };
 
   const handleKill = (anid: string, sid: string) => {
-    if (confirm('Kill this session?')) browserSocket.kill(anid, sid);
+    setKillTarget({ anid, sid });
   };
 
   return (
     <div className="w-1/3 bg-base-200 flex flex-col border-r border-base-300 h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-base-300 shrink-0">
+      <div className="flex items-center justify-between px-4 h-12 border-b border-base-300 bg-base-100 shrink-0">
         <div className="flex items-center gap-1.5 font-bold text-sm">
           <Cable size={15} />
           Claude Code Remote
@@ -338,15 +376,14 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
         )}
 
         {agentnodes.map((node: AgentnodeView) => (
-          <div key={node.id}>
+          <div key={node.id} className="border-t border-base-content/10 pt-3 first:border-t-0 first:pt-0">
             <div className="flex items-center gap-2 px-3 mb-2">
-              <Server size={12} className="shrink-0 text-base-content/40" />
-              <Circle
-                size={7}
-                className={`shrink-0 fill-current ${node.online ? 'text-success' : 'text-base-content/25'}`}
-              />
-              <span className="text-xs font-semibold text-base-content/60 truncate">{node.name}</span>
-              <div className="flex-1 h-px bg-base-300" />
+              <Server size={15} className="shrink-0 text-base-content/50" />
+              <span className="text-xs font-semibold text-base-content/70 truncate uppercase tracking-wider">{node.name}</span>
+              <span className={`shrink-0 badge badge-xs font-medium ${node.online ? 'badge-success' : 'badge-ghost text-base-content/40'}`}>
+                {node.online ? 'online' : 'offline'}
+              </span>
+              <div className="flex-1 h-px bg-base-content/15" />
             </div>
 
             <div className="flex flex-wrap gap-2 px-3">
@@ -362,7 +399,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
               ))}
               {node.online && (
                 <button
-                  className="w-36 h-[3.75rem] rounded-lg border-2 border-dashed border-base-300 text-base-content/30 hover:border-primary/50 hover:text-primary/60 transition-colors flex items-center justify-center"
+                  className="w-44 rounded-lg border-2 border-dashed border-base-content/25 h-[4.5rem] text-base-content/40 hover:border-primary/50 hover:text-primary/60 transition-colors flex items-center justify-center"
                   onClick={() => handleNew(node.id)}
                   title="New session"
                 ><Plus size={20} /></button>
@@ -377,6 +414,13 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
         <NewSessionModal
           onClose={() => setNewSessionAnid(null)}
           onCreate={handleCreate}
+        />
+      )}
+      {killTarget && (
+        <ConfirmModal
+          message="Kill this session?"
+          onConfirm={() => browserSocket.kill(killTarget.anid, killTarget.sid)}
+          onClose={() => setKillTarget(null)}
         />
       )}
     </div>
