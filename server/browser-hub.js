@@ -81,6 +81,10 @@ class BrowserHub {
         this._hub.send(anid, { type: 'rename', sid: msg.sid, name: msg.name });
         break;
 
+      case 'upload_image':
+        this._hub.send(anid, { type: 'upload_image', aid, sid: msg.sid, data: msg.data, ext: msg.ext });
+        break;
+
       default:
         this._sendTo(ws, { type: 'server_error', message: `Unknown message type: ${msg.type}` });
     }

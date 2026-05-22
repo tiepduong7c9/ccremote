@@ -28,10 +28,11 @@ export type ServerMsg =
   | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string }
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
   | { type: 'session_exit'; anid: string; sid: string; code: number }
+  | { type: 'image_uploaded'; anid: string; aid: string; path: string }
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image';
   anid: string;
   aid?: string;
   sid?: string;
@@ -42,4 +43,5 @@ export type BrowserMsg = {
   command?: string;
   cwd?: string;
   parentSid?: string;
+  ext?: string;
 };

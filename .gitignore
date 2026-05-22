@@ -4,3 +4,4 @@
 server/data/
 web/dist/
 .vite/
+.tmp/

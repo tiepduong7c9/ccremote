@@ -60,6 +60,7 @@ class AgentnodeHub extends EventEmitter {
       case 'scrollback':
       case 'data':
       case 'session_exit':
+      case 'image_uploaded':
       case 'server_error':
         this.emit('relay', { anid: record.id, msg });
         break;

@@ -1,5 +1,8 @@
 'use strict';
 
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const WebSocket = require('ws');
 const { encode, MessageParser } = require('./protocol');
 
@@ -231,6 +234,29 @@ class ServerLink {
           this._send({ type: 'session_renamed', session: renamed });
         } else {
           this._send({ type: 'server_error', message: `Session '${msg.sid}' not found` });
+        }
+        break;
+      }
+
+      case 'upload_image': {
+        const { aid, sid, data, ext } = msg;
+        const meta = this._manager.resolve(sid);
+        if (!meta) {
+          this._send({ type: 'server_error', aid, message: `Session '${sid}' not found` });
+          break;
+        }
+        try {
+          const tmpDir = path.join(meta.cwd, '.tmp');
+          fs.mkdirSync(tmpDir, { recursive: true });
+          const hash = crypto.createHash('sha1').update(data).digest('hex').slice(0, 12);
+          const filename = `paste-${hash}.${ext || 'png'}`;
+          const filepath = path.join(tmpDir, filename);
+          if (!fs.existsSync(filepath)) {
+            fs.writeFileSync(filepath, Buffer.from(data, 'base64'));
+          }
+          this._send({ type: 'image_uploaded', aid, path: path.join('.tmp', filename) });
+        } catch (err) {
+          this._send({ type: 'server_error', aid, message: `Failed to save image: ${err.message}` });
         }
         break;
       }

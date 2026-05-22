@@ -135,6 +135,14 @@ class BrowserSocket {
         }
         break;
 
+      case 'image_uploaded': {
+        const att = useTerminalStore.getState().attachments.get(msg.aid);
+        if (att?.anid) {
+          this.input(att.anid, msg.aid, btoa(unescape(encodeURIComponent('[read image @' + msg.path + '] '))));
+        }
+        break;
+      }
+
       case 'server_error':
         console.error('[ccremote]', msg.message);
         break;
@@ -218,6 +226,10 @@ class BrowserSocket {
 
   rename(anid: string, sid: string, name: string) {
     this.send({ type: 'rename', anid, sid, name });
+  }
+
+  uploadImage(anid: string, aid: string, sid: string, data: string, ext: string) {
+    this.send({ type: 'upload_image', anid, aid, sid, data, ext });
   }
 }
 
