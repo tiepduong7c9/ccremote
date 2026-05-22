@@ -10,6 +10,10 @@ const { STATE_DIR, SESSIONS_FILE } = require('./constants');
 
 const MAX_SCROLLBACK = 100 * 1024; // 100 KB per session
 
+// Absolute path to the hook script — written into .claude/settings.local.json
+const HOOK_COMMAND = `node ${path.join(__dirname, 'hook.js')}`;
+const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'Stop'];
+
 const ADJECTIVES = [
   'amber', 'arctic', 'bold', 'brave', 'bright', 'calm', 'cold', 'cool',
   'crisp', 'dark', 'dawn', 'deep', 'dusk', 'fast', 'fierce', 'frosty',
@@ -89,7 +93,7 @@ class SessionManager {
       cols: opts.cols || 220,
       rows: opts.rows || 50,
       cwd,
-      env: { ...process.env },
+      env: { ...process.env, CCREMOTE_SID: id },
     });
 
     const meta = {
@@ -113,6 +117,7 @@ class SessionManager {
     };
 
     this._registerPtyHandlers(session);
+    this._installClaudeHooks(cwd);
     this._sessions.set(id, session);
     this._persist();
     return { ...meta };
@@ -134,6 +139,7 @@ class SessionManager {
       // Non-zero exit = crashed/interrupted → keep resumable; zero = clean exit
       meta.status = exitCode === 0 ? 'exited' : 'suspended';
       meta.exitCode = exitCode;
+      delete meta.claudeStatus;
       for (const fn of session.listeners) fn({ type: 'exit', code: exitCode });
       session.listeners.clear();
       this._persist();
@@ -164,7 +170,7 @@ class SessionManager {
         cols: 220,
         rows: 50,
         cwd: meta.cwd,
-        env: { ...process.env },
+        env: { ...process.env, CCREMOTE_SID: meta.id },
       });
     } catch (err) {
       return false;
@@ -179,6 +185,7 @@ class SessionManager {
     session.scrollback = Buffer.alloc(0);
 
     this._registerPtyHandlers(session);
+    this._installClaudeHooks(meta.cwd);
     this._persist();
     return true;
   }
@@ -265,9 +272,40 @@ class SessionManager {
     for (const session of this._sessions.values()) {
       if (session.meta.status === 'running') {
         session.meta.status = 'suspended';
+        delete session.meta.claudeStatus;
         try { session.pty.kill(); } catch (_) {}
       }
     }
+    this._persist();
+  }
+
+  _installClaudeHooks(cwd) {
+    if (!cwd) return;
+    const claudeDir = path.join(cwd, '.claude');
+    const settingsPath = path.join(claudeDir, 'settings.local.json');
+    let settings = {};
+    try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch (_) {}
+    if (!settings.hooks) settings.hooks = {};
+    const hookEntry = { hooks: [{ type: 'command', command: HOOK_COMMAND }] };
+    for (const event of HOOK_EVENTS) {
+      if (!settings.hooks[event]) settings.hooks[event] = [];
+      // Remove stale ccremote entries, then re-add fresh one
+      settings.hooks[event] = settings.hooks[event].filter(
+        e => !e.hooks?.some(h => h.command === HOOK_COMMAND)
+      );
+      settings.hooks[event].push(hookEntry);
+    }
+    try {
+      fs.mkdirSync(claudeDir, { recursive: true });
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    } catch (_) {}
+  }
+
+  setClaudeStatus(id, claudeStatus) {
+    const session = this._sessions.get(id);
+    if (!session || session.meta.status !== 'running') return;
+    if (session.meta.claudeStatus === claudeStatus) return;
+    session.meta.claudeStatus = claudeStatus;
     this._persist();
   }
 

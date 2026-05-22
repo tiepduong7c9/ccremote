@@ -311,13 +311,21 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
         <div className="flex items-center justify-between">
           <span className="text-[9px] text-base-content/35 font-mono leading-none">{s.id}</span>
           <div className="flex items-center gap-1">
-            {s.status === 'running' && <>
+            {s.status === 'running' && s.claudeStatus === 'working' && <>
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0 animate-pulse" />
+              <span className="text-[10px] font-medium text-sky-600 dark:text-sky-400">working</span>
+            </>}
+            {s.status === 'running' && s.claudeStatus === 'waiting' && <>
+              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
+              <span className="text-[10px] font-medium text-yellow-600 dark:text-yellow-400">waiting</span>
+            </>}
+            {s.status === 'running' && (!s.claudeStatus || s.claudeStatus === 'idle') && <>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">running</span>
+              <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">idle</span>
             </>}
             {s.status === 'suspended' && <>
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-              <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">suspended</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" />
+              <span className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400">suspended</span>
             </>}
             {s.status === 'exited' && <>
               <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />

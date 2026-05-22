@@ -4,6 +4,7 @@ export interface SessionMeta {
   cwd: string;
   command: string;
   status: 'running' | 'suspended' | 'exited';
+  claudeStatus?: 'working' | 'waiting' | 'idle';
   createdAt: string;
   lastAttachedAt: string | null;
 }

@@ -147,6 +147,10 @@ function startDaemon() {
           break;
         }
 
+        case 'set_claude_status':
+          manager.setClaudeStatus(msg.sid, msg.claudeStatus);
+          break;
+
         default:
           send({ type: 'server_error', message: `Unknown command: ${msg.type}` });
       }
