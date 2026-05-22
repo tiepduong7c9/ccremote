@@ -3,7 +3,7 @@ import { useRegistryStore } from '../store';
 import { browserSocket } from '../ws';
 import { nanoid } from 'nanoid';
 import type { AgentnodeView, SessionMeta } from '../lib/protocol';
-import { Plus, X, Server, Circle, Copy, Check, Cable, ChevronDown } from 'lucide-react';
+import { Plus, X, Server, Copy, Check, Cable, ChevronDown } from 'lucide-react';
 
 // ── Add Node Modal ────────────────────────────────────────────────────────────
 
@@ -26,6 +26,15 @@ function AddAgentnodeModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [result, setResult] = useState<{ id: string; token: string; name: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [serverUrl, setServerUrl] = useState('');
+
+  useEffect(() => {
+    fetch('/api/info').then(r => r.json()).then(d => setServerUrl(d.serverUrl));
+  }, []);
+
+  const linkCmd = result && serverUrl
+    ? `ccremote config set-server ${serverUrl} && ccremote config set-token ${result.token} && ccremote link`
+    : '';
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,20 +77,26 @@ function AddAgentnodeModal({ onClose }: { onClose: () => void }) {
         ) : (
           <div>
             <p className="mt-4 text-sm text-base-content/70">
-              Agentnode <strong>{result.name}</strong> created. Copy this token — it's shown only once:
+              Agent node <strong>{result.name}</strong> created. Run this on the agent node machine to link it:
             </p>
-            <div className="mockup-code mt-2 relative">
-              <div className="absolute top-2 right-2">
+            <div className="mt-2 rounded-lg bg-base-300">
+              <div className="flex items-center justify-between px-3 pt-2">
+                <span className="text-xs text-base-content/40 font-mono">Link command</span>
+                <CopyButton text={linkCmd} />
+              </div>
+              <div className="overflow-x-auto px-3 pb-3">
+                <pre className="text-sm">{`ccremote config set-server ${serverUrl}\nccremote config set-token ${result.token}\nccremote link`}</pre>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-base-content/50">Token — save this, it's shown only once:</p>
+            <div className="mt-1 rounded-lg bg-base-300">
+              <div className="flex items-center justify-between px-3 pt-2">
+                <span className="text-xs text-base-content/40 font-mono">Token</span>
                 <CopyButton text={result.token} />
               </div>
-              <pre><code>{result.token}</code></pre>
-            </div>
-            <p className="mt-3 text-xs text-base-content/50">Run on the agentnode machine:</p>
-            <div className="mockup-code mt-1 relative">
-              <div className="absolute top-2 right-2">
-                <CopyButton text={`ccremote config set-token ${result.token}`} />
+              <div className="overflow-x-auto px-3 pb-3">
+                <pre className="text-sm"><code>{result.token}</code></pre>
               </div>
-              <pre><code>ccremote config set-token {result.token}</code></pre>
             </div>
             <div className="modal-action">
               <button className="btn btn-primary" onClick={onClose}>Done</button>

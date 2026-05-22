@@ -24,6 +24,12 @@ async function authRoutes(fastify) {
   fastify.get('/api/me', {
     preHandler: fastify.requireWebAuth,
   }, async () => ({ ok: true }));
+
+  fastify.get('/api/info', async (request) => {
+    const proto = request.headers['x-forwarded-proto'] || 'http';
+    const host = request.headers['x-forwarded-host'] || request.headers.host;
+    return { serverUrl: `${proto}://${host}` };
+  });
 }
 
 module.exports = authRoutes;
