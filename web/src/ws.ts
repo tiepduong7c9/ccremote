@@ -3,7 +3,8 @@ import type { Terminal } from '@xterm/xterm';
 function b64ToBytes(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 }
-import type { ServerMsg } from './lib/protocol';
+import type { ServerMsg, SessionMeta } from './lib/protocol';
+import { notificationsEnabled } from './lib/notifications';
 import { useRegistryStore, useTerminalStore } from './store';
 
 class MessageParser {
@@ -29,6 +30,7 @@ class BrowserSocket {
   private ws: WebSocket | null = null;
   private parser: MessageParser;
   private termsByAid: Map<string, Terminal> = new Map();
+  private knownStatus = new Map<string, string | undefined>();
   private retries = 0;
   private stopped = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -78,6 +80,10 @@ class BrowserSocket {
 
     switch (msg.type) {
       case 'snapshot':
+        // Seed known status from initial state — no notifications on connect
+        for (const node of msg.agentnodes)
+          for (const s of node.sessions)
+            this.knownStatus.set(s.id, s.claudeStatus);
         registry.applySnapshot(msg.agentnodes);
         break;
 
@@ -89,9 +95,12 @@ class BrowserSocket {
         registry.setOffline(msg.anid);
         break;
 
-      case 'sessions':
+      case 'sessions': {
+        const nodeName = registry.agentnodes.get(msg.anid)?.name ?? '';
+        this.notifyStatusChanges(msg.sessions, nodeName);
         registry.setSessions(msg.anid, msg.sessions);
         break;
+      }
 
       case 'attached': {
         const att = terminals.attachments.get(msg.aid);
@@ -115,6 +124,9 @@ class BrowserSocket {
       }
 
       case 'session_exit':
+        this.knownStatus.delete(msg.sid);
+        localStorage.removeItem(`ccremote:notif:${msg.sid}:waiting`);
+        localStorage.removeItem(`ccremote:notif:${msg.sid}:idle`);
         registry.setSessions(msg.anid, registry.agentnodes.get(msg.anid)?.sessions.map(s =>
           s.id === msg.sid ? { ...s, status: 'exited' as const } : s
         ) || []);
@@ -126,6 +138,43 @@ class BrowserSocket {
       case 'server_error':
         console.error('[ccremote]', msg.message);
         break;
+    }
+  }
+
+  private notifyStatusChanges(sessions: SessionMeta[], nodeName: string) {
+    for (const s of sessions) {
+      const prev = this.knownStatus.get(s.id);
+      const curr = s.claudeStatus;
+      if (prev !== undefined && prev !== curr && (curr === 'waiting' || curr === 'idle')) {
+        this.fireNotification(s, nodeName, curr);
+      }
+      this.knownStatus.set(s.id, curr);
+    }
+  }
+
+  private fireNotification(s: SessionMeta, nodeName: string, status: 'waiting' | 'idle') {
+    if (!notificationsEnabled()) return;
+    if (document.visibilityState === 'visible') return;
+    const storageKey = `ccremote:notif:${s.id}:${status}`;
+    const lockName = `ccremote-notif-${s.id}-${status}`;
+    const tryFire = () => {
+      const now = Date.now();
+      const last = parseInt(localStorage.getItem(storageKey) || '0', 10);
+      if (last + 30_000 > now) return;
+      localStorage.setItem(storageKey, String(now));
+      const folder = s.cwd ? s.cwd.split('/').filter(Boolean).pop() : null;
+      const label = folder ? `[${folder}] ${s.name}` : s.name;
+      const title = status === 'waiting' ? `${label} needs your input` : `${label} is done`;
+      new Notification(title, { body: nodeName || undefined, icon: '/favicon.svg' });
+    };
+    if ('locks' in navigator) {
+      // ifAvailable: skip rather than queue if another tab is already handling this
+      navigator.locks.request(lockName, { ifAvailable: true }, async (lock) => {
+        if (!lock) return;
+        tryFire();
+      });
+    } else {
+      tryFire();
     }
   }
 

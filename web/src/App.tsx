@@ -5,6 +5,7 @@ import LoginScreen from './components/LoginScreen';
 import SessionCards from './components/SessionCards';
 import TerminalPanel from './components/Terminal';
 import ThemeToggle from './components/ThemeToggle';
+import NotificationToggle from './components/NotificationToggle';
 import { Folder, TerminalSquare, ChevronRight } from 'lucide-react';
 
 export default function App() {
@@ -57,7 +58,10 @@ export default function App() {
               <span className="text-sm font-semibold">ccremote</span>
             </div>
           )}
-          <ThemeToggle />
+          <div className="flex items-center gap-0.5 shrink-0">
+            <NotificationToggle />
+            <ThemeToggle />
+          </div>
         </header>
         <main className="flex-1 overflow-hidden">
           {selectedAnid && selectedSid ? (
