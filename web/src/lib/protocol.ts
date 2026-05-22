@@ -5,6 +5,7 @@ export interface SessionMeta {
   command: string;
   status: 'running' | 'suspended' | 'exited';
   claudeStatus?: 'working' | 'waiting' | 'idle';
+  parentSid?: string;
   createdAt: string;
   lastAttachedAt: string | null;
 }
@@ -40,4 +41,5 @@ export type BrowserMsg = {
   name?: string;
   command?: string;
   cwd?: string;
+  parentSid?: string;
 };

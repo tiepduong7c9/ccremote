@@ -79,6 +79,8 @@ class SessionManager {
     const cwd = path.resolve(rawCwd.replace(/^~(?=$|\/)/, os.homedir()));
     const command = opts.command || 'claude';
     const args = opts.args || [];
+    const parentSid = opts.parentSid || null;
+    const transient = opts.transient || false;
 
     // For claude sessions, pin a UUID so we can resume this exact conversation
     // later with `claude --resume <claudeSessionId>`, regardless of how many
@@ -103,6 +105,8 @@ class SessionManager {
       command,
       args,
       ...(claudeSessionId && { claudeSessionId }),
+      ...(parentSid && { parentSid }),
+      ...(transient && { transient }),
       pid: ptyProc.pid,
       status: 'running',
       createdAt: new Date().toISOString(),
@@ -117,7 +121,7 @@ class SessionManager {
     };
 
     this._registerPtyHandlers(session);
-    this._installClaudeHooks(cwd);
+    if (command === 'claude') this._installClaudeHooks(cwd);
     this._sessions.set(id, session);
     this._persist();
     return { ...meta };
@@ -185,7 +189,7 @@ class SessionManager {
     session.scrollback = Buffer.alloc(0);
 
     this._registerPtyHandlers(session);
-    this._installClaudeHooks(meta.cwd);
+    if (meta.command === 'claude') this._installClaudeHooks(meta.cwd);
     this._persist();
     return true;
   }
@@ -258,6 +262,15 @@ class SessionManager {
       if (meta) return this.kill(meta.id);
       return false;
     }
+    // Kill any bash child sessions that belong to this session
+    for (const [childId, child] of this._sessions) {
+      if (child.meta.parentSid === session.meta.id) {
+        if (child.meta.status === 'running') {
+          try { child.pty.kill(); } catch (_) {}
+        }
+        this._sessions.delete(childId);
+      }
+    }
     if (session.meta.status === 'running') {
       try { session.pty.kill(); } catch (_) {}
     }
@@ -267,10 +280,16 @@ class SessionManager {
   }
 
   // Called during graceful daemon shutdown — marks live sessions as suspended
-  // so they appear resumable after the daemon restarts.
+  // so they appear resumable after the daemon restarts. Transient sessions
+  // (bash tabs) are killed and deleted instead so they don't reappear.
   suspendAll() {
-    for (const session of this._sessions.values()) {
-      if (session.meta.status === 'running') {
+    for (const [id, session] of this._sessions) {
+      if (session.meta.transient) {
+        if (session.meta.status === 'running') {
+          try { session.pty.kill(); } catch (_) {}
+        }
+        this._sessions.delete(id);
+      } else if (session.meta.status === 'running') {
         session.meta.status = 'suspended';
         delete session.meta.claudeStatus;
         try { session.pty.kill(); } catch (_) {}
@@ -313,7 +332,11 @@ class SessionManager {
     try {
       fs.writeFileSync(
         SESSIONS_FILE,
-        JSON.stringify([...this._sessions.values()].map(s => s.meta), null, 2),
+        JSON.stringify(
+          [...this._sessions.values()].filter(s => !s.meta.transient).map(s => s.meta),
+          null,
+          2,
+        ),
       );
     } catch (_) {}
   }

@@ -39,7 +39,9 @@ interface RegistryState {
   agentnodes: Map<string, AgentnodeView>;
   selectedAnid: string | null;
   selectedSid: string | null;
+  activeTabBySid: Map<string, string>; // parentSid -> active tab sid
   select: (anid: string, sid: string | null) => void;
+  setActiveTab: (parentSid: string, tabSid: string) => void;
   applySnapshot: (nodes: AgentnodeView[]) => void;
   setOnline: (node: { anid: string; name: string }) => void;
   setOffline: (anid: string) => void;
@@ -50,7 +52,15 @@ export const useRegistryStore = create<RegistryState>((set, get) => ({
   agentnodes: new Map(),
   selectedAnid: null,
   selectedSid: null,
+  activeTabBySid: new Map(),
   select: (anid, sid) => set({ selectedAnid: anid, selectedSid: sid }),
+  setActiveTab: (parentSid, tabSid) => {
+    set(state => {
+      const map = new Map(state.activeTabBySid);
+      map.set(parentSid, tabSid);
+      return { activeTabBySid: map };
+    });
+  },
   applySnapshot: (nodes) => {
     const map = new Map(nodes.map(n => [n.id, n]));
     set({ agentnodes: map });

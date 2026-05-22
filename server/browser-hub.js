@@ -70,7 +70,7 @@ class BrowserHub {
 
       case 'create':
         this.attachments.set(aid, { ws, anid, sid: null });
-        this._hub.send(anid, { type: 'create', aid, name: msg.name, command: msg.command, cwd: msg.cwd, cols: msg.cols, rows: msg.rows });
+        this._hub.send(anid, { type: 'create', aid, name: msg.name, command: msg.command, cwd: msg.cwd, cols: msg.cols, rows: msg.rows, parentSid: msg.parentSid });
         break;
 
       case 'kill':

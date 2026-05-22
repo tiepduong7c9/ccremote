@@ -208,7 +208,7 @@ class BrowserSocket {
     this.send({ type: 'resize', anid, aid, cols, rows });
   }
 
-  create(anid: string, aid: string, opts: { name?: string; command?: string; cwd?: string; cols: number; rows: number }) {
+  create(anid: string, aid: string, opts: { name?: string; command?: string; cwd?: string; cols: number; rows: number; parentSid?: string }) {
     this.send({ type: 'create', anid, aid, ...opts });
   }
 

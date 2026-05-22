@@ -418,7 +418,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
             </div>
 
             <div className="flex flex-wrap gap-2 px-3">
-              {node.sessions.map((s: SessionMeta) => (
+              {node.sessions.filter((s: SessionMeta) => !s.parentSid).map((s: SessionMeta) => (
                 <SessionCard
                   key={s.id}
                   session={s}

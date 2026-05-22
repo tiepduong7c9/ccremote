@@ -10,11 +10,14 @@ import '@xterm/xterm/css/xterm.css';
 interface Props {
   anid: string;
   sid: string;
+  visible?: boolean;
 }
 
-export default function TerminalPanel({ anid, sid }: Props) {
+export default function TerminalPanel({ anid, sid, visible = true }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const aidRef = useRef<string>(nanoid(8));
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const termRef = useRef<Terminal | null>(null);
   const setAttachment = useTerminalStore(s => s.setAttachment);
   const removeAttachment = useTerminalStore(s => s.removeAttachment);
 
@@ -29,10 +32,13 @@ export default function TerminalPanel({ anid, sid }: Props) {
       theme: { background: '#1e1e2e', foreground: '#cdd6f4' },
     });
     const fitAddon = new FitAddon();
+    fitAddonRef.current = fitAddon;
+    termRef.current = term;
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(containerRef.current);
     fitAddon.fit();
+    term.focus();
 
     browserSocket.registerTerm(aid, term);
     setAttachment(aid, { anid, sid, session: null, status: 'attaching' });
@@ -67,8 +73,27 @@ export default function TerminalPanel({ anid, sid }: Props) {
       browserSocket.unregisterTerm(aid);
       removeAttachment(aid);
       term.dispose();
+      fitAddonRef.current = null;
+      termRef.current = null;
     };
   }, [anid, sid]);
 
-  return <div ref={containerRef} className="w-full h-full bg-[#1e1e2e]" />;
+  // When this tab becomes visible, re-fit, resize, and focus so typing works immediately
+  useEffect(() => {
+    if (!visible) return;
+    const fitAddon = fitAddonRef.current;
+    const term = termRef.current;
+    if (!fitAddon || !term) return;
+    fitAddon.fit();
+    browserSocket.resize(anid, aidRef.current, term.cols, term.rows);
+    term.focus();
+  }, [visible, anid]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-full h-full bg-[#1e1e2e]"
+      style={visible ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
+    />
+  );
 }

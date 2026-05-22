@@ -3,7 +3,7 @@ import { useAuthStore, useRegistryStore } from './store';
 import { browserSocket } from './ws';
 import LoginScreen from './components/LoginScreen';
 import SessionCards from './components/SessionCards';
-import TerminalPanel from './components/Terminal';
+import TerminalTabs from './components/TerminalTabs';
 import ThemeToggle from './components/ThemeToggle';
 import NotificationToggle from './components/NotificationToggle';
 import { Folder, TerminalSquare, ChevronRight } from 'lucide-react';
@@ -65,7 +65,7 @@ export default function App() {
         </header>
         <main className="flex-1 overflow-hidden">
           {selectedAnid && selectedSid ? (
-            <TerminalPanel anid={selectedAnid} sid={selectedSid} />
+            <TerminalTabs anid={selectedAnid} parentSid={selectedSid} />
           ) : (
             <div className="flex items-center justify-center h-full text-base-content/40 text-sm">
               Select or create a session

@@ -181,10 +181,14 @@ class ServerLink {
       }
 
       case 'create': {
-        const { aid, name, command, cwd, cols, rows } = msg;
+        const { aid, name, cwd, cols, rows, parentSid } = msg;
+        // If parentSid is set this is a bash tab — use the user's shell and
+        // mark it transient so it is never persisted and dies on shutdown.
+        const isBashTab = !!parentSid;
+        const command = msg.command || (isBashTab ? (process.env.SHELL || 'bash') : 'claude');
         let meta;
         try {
-          meta = this._manager.create({ name, command: command || 'claude', cwd, cols, rows });
+          meta = this._manager.create({ name, command, cwd, cols, rows, parentSid, transient: isBashTab });
         } catch (err) {
           this._send({ type: 'server_error', aid, message: err.message });
           break;
