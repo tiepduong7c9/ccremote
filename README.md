@@ -4,12 +4,43 @@ Manage Claude Code sessions with `node-pty`. Sessions persist across detaches â€
 
 ## Install
 
+Requires Node.js >= 18, `make`, `gcc` (for native `node-pty`).
+
+**On each machine running Claude sessions:**
+
 ```bash
-npm install        # compiles native node-pty â€” requires make + gcc
-cd agentnode && npm link   # makes `ccremote` available globally
+curl -fsSL https://raw.githubusercontent.com/tiepduong7c9/ccremote/main/install.sh | bash
 ```
 
-Requires Node.js >= 18, `make`, `gcc`.
+Installs the `ccremote` CLI. Run `ccremote new` to start a session.
+
+**On the machine hosting the web UI:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tiepduong7c9/ccremote/main/install.sh | bash -s -- --server
+```
+
+Builds the frontend, prompts for a password, and registers a systemd user service (`ccremote-server`) that starts on login.
+
+**To update either machine:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tiepduong7c9/ccremote/main/install.sh | bash -s -- --update
+```
+
+**To uninstall:**
+
+```bash
+# Agentnode
+curl -fsSL https://raw.githubusercontent.com/tiepduong7c9/ccremote/main/install.sh | bash -s -- --uninstall
+
+# Server
+curl -fsSL https://raw.githubusercontent.com/tiepduong7c9/ccremote/main/install.sh | bash -s -- --server --uninstall
+```
+
+Both will prompt before removing runtime data (sessions, config, server registry).
+
+Files are downloaded to `~/.local/share/ccremote`. Override with `CCREMOTE_DIR=/your/path`.
 
 ## CLI usage
 

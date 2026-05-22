@@ -4,11 +4,13 @@
   "version": "0.2.0",
   "workspaces": ["agentnode", "server", "web"],
   "scripts": {
-    "daemon":  "npm --workspace ccremote     run daemon",
-    "server":  "npm --workspace @ccremote/server start",
-    "web:dev": "npm --workspace @ccremote/web    run dev",
-    "build":   "npm --workspace @ccremote/web    run build",
-    "dev":     "node scripts/dev.js"
+    "daemon":           "npm --workspace ccremote     run daemon",
+    "server":           "npm --workspace @ccremote/server start",
+    "web:dev":          "npm --workspace @ccremote/web    run dev",
+    "build":            "npm --workspace @ccremote/web    run build",
+    "dev":    "node scripts/dev.js",
+    "setup":  "bash install.sh",
+    "update": "bash install.sh --update"
   },
   "engines": { "node": ">=18" }
 }
