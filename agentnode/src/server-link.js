@@ -332,6 +332,14 @@ class ServerLink {
         break;
       }
 
+      case 'git_pull': {
+        const { aid, cwd } = msg;
+        this._git.pull(cwd)
+          .then(({ output }) => this._send({ type: 'git_pull_result', aid, output }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
       case 'git_diff': {
         const { aid, cwd, path: filePath } = msg;
         this._git.fileContents(cwd, filePath)

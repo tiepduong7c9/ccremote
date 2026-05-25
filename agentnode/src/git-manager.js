@@ -143,6 +143,12 @@ class GitManager {
     await run(['worktree', 'remove', '--force', abs], repoPath);
   }
 
+  async pull(cwd) {
+    const abs = resolvePath(cwd);
+    const output = await run(['pull'], abs);
+    return { output };
+  }
+
   async status(cwd) {
     const abs = resolvePath(cwd);
     const [porcelainBuf, branch] = await Promise.all([

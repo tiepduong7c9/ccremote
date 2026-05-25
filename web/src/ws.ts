@@ -37,6 +37,7 @@ class BrowserSocket {
   private repoCallbacks: Map<string, (repos: GitRepo[] | null, error?: string) => void> = new Map();
   private statusCallbacks: Map<string, (result: { branch: string; files: GitFileChange[] } | null, error?: string) => void> = new Map();
   private diffCallbacks: Map<string, (result: { oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
+  private pullCallbacks: Map<string, (result: { output: string } | null, error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -158,7 +159,9 @@ class BrowserSocket {
         const statusCb = this.statusCallbacks.get(msg.aid);
         if (statusCb) { statusCb(null, msg.message); this.statusCallbacks.delete(msg.aid); break; }
         const diffCb = this.diffCallbacks.get(msg.aid);
-        if (diffCb) { diffCb(null, msg.message); this.diffCallbacks.delete(msg.aid); }
+        if (diffCb) { diffCb(null, msg.message); this.diffCallbacks.delete(msg.aid); break; }
+        const pullCb = this.pullCallbacks.get(msg.aid);
+        if (pullCb) { pullCb(null, msg.message); this.pullCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -171,6 +174,12 @@ class BrowserSocket {
       case 'git_diff_result': {
         const cb = this.diffCallbacks.get(msg.aid);
         if (cb) { cb({ oldContent: msg.oldContent, newContent: msg.newContent, language: msg.language, isBinary: msg.isBinary, tooLarge: msg.tooLarge }); this.diffCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_pull_result': {
+        const cb = this.pullCallbacks.get(msg.aid);
+        if (cb) { cb({ output: msg.output }); this.pullCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -301,6 +310,11 @@ class BrowserSocket {
   gitDiff(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void) {
     this.diffCallbacks.set(aid, cb);
     this.send({ type: 'git_diff', anid, aid, cwd, path: filePath });
+  }
+
+  gitPull(anid: string, aid: string, cwd: string, cb: (result: { output: string } | null, error?: string) => void) {
+    this.pullCallbacks.set(aid, cb);
+    this.send({ type: 'git_pull', anid, aid, cwd });
   }
 }
 
