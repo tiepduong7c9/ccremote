@@ -54,10 +54,11 @@ export type ServerMsg =
   | { type: 'git_result'; anid: string; aid: string; success: boolean; message: string }
   | { type: 'git_status_result'; anid: string; aid: string; branch: string; files: GitFileChange[] }
   | { type: 'git_diff_result'; anid: string; aid: string; path: string; oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean }
+  | { type: 'git_pull_result'; anid: string; aid: string; output: string }
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull';
   anid: string;
   aid?: string;
   sid?: string;

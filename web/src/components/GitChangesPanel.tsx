@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GitBranch, RefreshCw, List, FolderTree, ChevronRight, ChevronLeft } from 'lucide-react';
+import { GitBranch, RefreshCw, List, FolderTree, ChevronRight, ChevronLeft, CloudDownload } from 'lucide-react';
 import { useGitStore } from '../git-store';
 import GitFileList from './GitFileList';
 import GitFileTree from './GitFileTree';
@@ -12,12 +12,13 @@ interface Props {
 }
 
 export default function GitChangesPanel({ anid, sid, cwd }: Props) {
-  const { statusBySid, viewMode, panelCollapsed, setViewMode, setPanelCollapsed, loadStatus } = useGitStore();
+  const { statusBySid, viewMode, panelCollapsed, setViewMode, setPanelCollapsed, loadStatus, pull } = useGitStore();
   const status = statusBySid.get(sid);
   const [diffFile, setDiffFile] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   const handleRefresh = () => { if (cwd) loadStatus(anid, sid, cwd); };
+  const handlePull = () => { if (cwd) pull(anid, sid, cwd); };
 
   const handleOpenFile = (p: string) => {
     setSelectedFile(p);
@@ -48,10 +49,7 @@ export default function GitChangesPanel({ anid, sid, cwd }: Props) {
       <div className="w-72 shrink-0 border-l border-base-300 bg-base-200 flex flex-col h-full overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-1 px-2 h-10 border-b border-base-300 shrink-0">
-          <GitBranch size={13} className="text-base-content/40 shrink-0" />
-          <span className="text-xs font-mono text-base-content/60 truncate flex-1 min-w-0">
-            {status?.branch || '—'}
-          </span>
+          <span className="text-xs font-semibold text-base-content/60 flex-1 min-w-0">Changes</span>
           <button
             className="btn btn-xs btn-ghost p-0 w-6 h-6"
             onClick={handleRefresh}
@@ -84,7 +82,7 @@ export default function GitChangesPanel({ anid, sid, cwd }: Props) {
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
           {!cwd && (
             <div className="flex items-center justify-center h-full text-xs text-base-content/40 px-3 text-center">
               No working directory
@@ -121,6 +119,27 @@ export default function GitChangesPanel({ anid, sid, cwd }: Props) {
               )}
             </>
           )}
+        </div>
+
+        {/* Footer: branch + pull */}
+        <div className="flex items-center gap-1 px-2 h-9 border-t border-base-300 shrink-0">
+          <GitBranch size={12} className="text-base-content/40 shrink-0" />
+          <span className="text-xs font-mono text-base-content/60 truncate flex-1 min-w-0">
+            {status?.branch || '—'}
+          </span>
+          {status?.pullError && (
+            <span className="text-xs text-error truncate max-w-[6rem]" title={status.pullError}>
+              {status.pullError}
+            </span>
+          )}
+          <button
+            className="btn btn-xs btn-ghost p-0 w-6 h-6"
+            onClick={handlePull}
+            title="Pull from remote"
+            disabled={!cwd || status?.pulling || status?.loading}
+          >
+            <CloudDownload size={13} className={status?.pulling ? 'animate-pulse' : ''} />
+          </button>
         </div>
       </div>
 
