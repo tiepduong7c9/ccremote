@@ -570,7 +570,7 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
 
   return (
     <div
-      className={`relative group w-56 rounded-lg border p-2 transition-colors select-none
+      className={`relative group w-56 overflow-hidden rounded-lg border p-2 transition-colors select-none
         ${isExited
           ? 'opacity-40 cursor-not-allowed border-base-300 bg-base-100'
           : selected
@@ -695,7 +695,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
       <div className="flex items-center justify-between px-4 h-12 border-b border-base-300 bg-base-100 shrink-0">
         <div className="flex items-center gap-1.5 font-bold text-sm">
           <Cable size={15} />
-          Claude Code Remote
+          CCREMOTE
         </div>
         <button className="btn btn-xs btn-ghost gap-1" onClick={() => setShowAdd(true)}>
           <Plus size={13} /> Node
@@ -710,7 +710,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
         )}
 
         {agentnodes.map((node: AgentnodeView) => (
-          <div key={node.id} className="border-t border-base-content/10 pt-3 first:border-t-0 first:pt-0">
+          <div key={node.id}>
             <div className="flex items-center gap-2 px-3 mb-3">
               <Server size={15} className="shrink-0 text-base-content/50" />
               <span className="text-xs font-semibold text-base-content/70 truncate uppercase tracking-wider">{node.name}</span>
@@ -738,7 +738,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
               ))}
               {node.online && (
                 <button
-                  className="w-56 rounded-lg border-2 border-dashed border-base-content/25 h-[4.5rem] text-base-content/40 hover:border-primary/50 hover:text-primary/60 transition-colors flex items-center justify-center"
+                  className="w-56 rounded-lg border-2 border-dashed border-base-content/25 h-8 text-base-content/40 hover:border-primary/50 hover:text-primary/60 transition-colors flex items-center justify-center"
                   onClick={() => handleNew(node.id)}
                   title="New session"
                 ><Plus size={20} /></button>
