@@ -140,7 +140,7 @@ class GitManager {
 
   async removeWorktree(repoPath, worktreePath) {
     const abs = resolvePath(worktreePath);
-    await run(['worktree', 'remove', abs], repoPath);
+    await run(['worktree', 'remove', '--force', abs], repoPath);
   }
 
   async status(cwd) {
