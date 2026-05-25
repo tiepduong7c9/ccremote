@@ -19,9 +19,15 @@ process.stdin.on('end', () => {
 
   let claudeStatus;
   switch (event.hook_event_name) {
-    case 'Stop':        claudeStatus = 'idle';    break;
+    case 'Stop':
+      claudeStatus = 'idle';
+      break;
     case 'PreToolUse':
-    case 'PostToolUse': claudeStatus = 'working'; break;
+      claudeStatus = event.tool_name === 'AskUserQuestion' ? 'waiting' : 'working';
+      break;
+    case 'PostToolUse':
+      claudeStatus = 'working';
+      break;
     default: process.exit(0);
   }
 
