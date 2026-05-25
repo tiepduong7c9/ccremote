@@ -691,7 +691,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
   };
 
   return (
-    <div className="w-1/3 bg-base-200 flex flex-col border-r border-base-300 h-full">
+    <div className="w-64 shrink-0 bg-base-200 flex flex-col border-r border-base-300 h-full">
       <div className="flex items-center justify-between px-4 h-12 border-b border-base-300 bg-base-100 shrink-0">
         <div className="flex items-center gap-1.5 font-bold text-sm">
           <Cable size={15} />

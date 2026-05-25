@@ -3,7 +3,7 @@ import type { Terminal } from '@xterm/xterm';
 function b64ToBytes(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 }
-import type { GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
+import type { GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
 import { notificationsEnabled } from './lib/notifications';
 import { useRegistryStore, useTerminalStore } from './store';
 
@@ -34,7 +34,9 @@ class BrowserSocket {
   private retries = 0;
   private stopped = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private gitCallbacks: Map<string, (repos: GitRepo[] | null, error?: string) => void> = new Map();
+  private repoCallbacks: Map<string, (repos: GitRepo[] | null, error?: string) => void> = new Map();
+  private statusCallbacks: Map<string, (result: { branch: string; files: GitFileChange[] } | null, error?: string) => void> = new Map();
+  private diffCallbacks: Map<string, (result: { oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -145,14 +147,30 @@ class BrowserSocket {
       }
 
       case 'git_repos': {
-        const cb = this.gitCallbacks.get(msg.aid);
-        if (cb) { cb(msg.repos); this.gitCallbacks.delete(msg.aid); }
+        const cb = this.repoCallbacks.get(msg.aid);
+        if (cb) { cb(msg.repos); this.repoCallbacks.delete(msg.aid); }
         break;
       }
 
       case 'git_result': {
-        const cb = this.gitCallbacks.get(msg.aid);
-        if (cb) { cb(null, msg.message); this.gitCallbacks.delete(msg.aid); }
+        const repoCb = this.repoCallbacks.get(msg.aid);
+        if (repoCb) { repoCb(null, msg.message); this.repoCallbacks.delete(msg.aid); break; }
+        const statusCb = this.statusCallbacks.get(msg.aid);
+        if (statusCb) { statusCb(null, msg.message); this.statusCallbacks.delete(msg.aid); break; }
+        const diffCb = this.diffCallbacks.get(msg.aid);
+        if (diffCb) { diffCb(null, msg.message); this.diffCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_status_result': {
+        const cb = this.statusCallbacks.get(msg.aid);
+        if (cb) { cb({ branch: msg.branch, files: msg.files }); this.statusCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_diff_result': {
+        const cb = this.diffCallbacks.get(msg.aid);
+        if (cb) { cb({ oldContent: msg.oldContent, newContent: msg.newContent, language: msg.language, isBinary: msg.isBinary, tooLarge: msg.tooLarge }); this.diffCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -246,33 +264,43 @@ class BrowserSocket {
   }
 
   gitRepoList(anid: string, aid: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
-    this.gitCallbacks.set(aid, cb);
+    this.repoCallbacks.set(aid, cb);
     this.send({ type: 'git_repo_list', anid, aid });
   }
 
   gitClone(anid: string, aid: string, url: string, localPath: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
-    this.gitCallbacks.set(aid, cb);
+    this.repoCallbacks.set(aid, cb);
     this.send({ type: 'git_clone', anid, aid, url, localPath });
   }
 
   gitRepoAdd(anid: string, aid: string, localPath: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
-    this.gitCallbacks.set(aid, cb);
+    this.repoCallbacks.set(aid, cb);
     this.send({ type: 'git_repo_add', anid, aid, localPath });
   }
 
   gitRepoRemove(anid: string, aid: string, localPath: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
-    this.gitCallbacks.set(aid, cb);
+    this.repoCallbacks.set(aid, cb);
     this.send({ type: 'git_repo_remove', anid, aid, localPath });
   }
 
   gitWorktreeAdd(anid: string, aid: string, repoPath: string, worktreePath: string, branch: string, newBranch: boolean, cb: (repos: GitRepo[] | null, error?: string) => void) {
-    this.gitCallbacks.set(aid, cb);
+    this.repoCallbacks.set(aid, cb);
     this.send({ type: 'git_worktree_add', anid, aid, repoPath, worktreePath, branch, newBranch });
   }
 
   gitWorktreeRemove(anid: string, aid: string, repoPath: string, worktreePath: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
-    this.gitCallbacks.set(aid, cb);
+    this.repoCallbacks.set(aid, cb);
     this.send({ type: 'git_worktree_remove', anid, aid, repoPath, worktreePath });
+  }
+
+  gitStatus(anid: string, aid: string, cwd: string, cb: (result: { branch: string; files: GitFileChange[] } | null, error?: string) => void) {
+    this.statusCallbacks.set(aid, cb);
+    this.send({ type: 'git_status', anid, aid, cwd });
+  }
+
+  gitDiff(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void) {
+    this.diffCallbacks.set(aid, cb);
+    this.send({ type: 'git_diff', anid, aid, cwd, path: filePath });
   }
 }
 
