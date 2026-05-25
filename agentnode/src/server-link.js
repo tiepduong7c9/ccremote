@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
 const { encode, MessageParser } = require('./protocol');
+const GitManager = require('./git-manager');
 
 const pkg = require('../package.json');
 
@@ -19,6 +20,7 @@ class ServerLink {
     this._rejectedCount = 0;
     this._stopped = false;
     this._retryTimer = null;
+    this._git = new GitManager();
 
     // Hook into manager._persist to push session updates to the server
     const original = manager._persist.bind(manager);
@@ -264,6 +266,63 @@ class ServerLink {
       case 'list':
         this._send({ type: 'sessions', sessions: this._manager.list() });
         break;
+
+      case 'git_repo_list': {
+        const { aid } = msg;
+        this._git.listRepos()
+          .then(repos => this._send({ type: 'git_repos', aid, repos }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'git_clone': {
+        const { aid, url, localPath } = msg;
+        this._git.clone(url, localPath)
+          .then(() => this._git.listRepos())
+          .then(repos => this._send({ type: 'git_repos', aid, repos }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'git_repo_add': {
+        const { aid, localPath } = msg;
+        try {
+          this._git.addRepo(localPath);
+          this._git.listRepos()
+            .then(repos => this._send({ type: 'git_repos', aid, repos }))
+            .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        } catch (err) {
+          this._send({ type: 'git_result', aid, success: false, message: err.message });
+        }
+        break;
+      }
+
+      case 'git_repo_remove': {
+        const { aid, localPath } = msg;
+        this._git.removeRepo(localPath);
+        this._git.listRepos()
+          .then(repos => this._send({ type: 'git_repos', aid, repos }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'git_worktree_add': {
+        const { aid, repoPath, worktreePath, branch, newBranch } = msg;
+        this._git.addWorktree(repoPath, worktreePath, branch, newBranch)
+          .then(() => this._git.listRepos())
+          .then(repos => this._send({ type: 'git_repos', aid, repos }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'git_worktree_remove': {
+        const { aid, repoPath, worktreePath } = msg;
+        this._git.removeWorktree(repoPath, worktreePath)
+          .then(() => this._git.listRepos())
+          .then(repos => this._send({ type: 'git_repos', aid, repos }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
 
       default:
         break;

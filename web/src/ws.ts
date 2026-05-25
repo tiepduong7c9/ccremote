@@ -3,7 +3,7 @@ import type { Terminal } from '@xterm/xterm';
 function b64ToBytes(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 }
-import type { ServerMsg, SessionMeta } from './lib/protocol';
+import type { GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
 import { notificationsEnabled } from './lib/notifications';
 import { useRegistryStore, useTerminalStore } from './store';
 
@@ -34,6 +34,7 @@ class BrowserSocket {
   private retries = 0;
   private stopped = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private gitCallbacks: Map<string, (repos: GitRepo[] | null, error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -143,6 +144,18 @@ class BrowserSocket {
         break;
       }
 
+      case 'git_repos': {
+        const cb = this.gitCallbacks.get(msg.aid);
+        if (cb) { cb(msg.repos); this.gitCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_result': {
+        const cb = this.gitCallbacks.get(msg.aid);
+        if (cb) { cb(null, msg.message); this.gitCallbacks.delete(msg.aid); }
+        break;
+      }
+
       case 'server_error':
         console.error('[ccremote]', msg.message);
         break;
@@ -230,6 +243,36 @@ class BrowserSocket {
 
   uploadImage(anid: string, aid: string, sid: string, data: string, ext: string) {
     this.send({ type: 'upload_image', anid, aid, sid, data, ext });
+  }
+
+  gitRepoList(anid: string, aid: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
+    this.gitCallbacks.set(aid, cb);
+    this.send({ type: 'git_repo_list', anid, aid });
+  }
+
+  gitClone(anid: string, aid: string, url: string, localPath: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
+    this.gitCallbacks.set(aid, cb);
+    this.send({ type: 'git_clone', anid, aid, url, localPath });
+  }
+
+  gitRepoAdd(anid: string, aid: string, localPath: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
+    this.gitCallbacks.set(aid, cb);
+    this.send({ type: 'git_repo_add', anid, aid, localPath });
+  }
+
+  gitRepoRemove(anid: string, aid: string, localPath: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
+    this.gitCallbacks.set(aid, cb);
+    this.send({ type: 'git_repo_remove', anid, aid, localPath });
+  }
+
+  gitWorktreeAdd(anid: string, aid: string, repoPath: string, worktreePath: string, branch: string, newBranch: boolean, cb: (repos: GitRepo[] | null, error?: string) => void) {
+    this.gitCallbacks.set(aid, cb);
+    this.send({ type: 'git_worktree_add', anid, aid, repoPath, worktreePath, branch, newBranch });
+  }
+
+  gitWorktreeRemove(anid: string, aid: string, repoPath: string, worktreePath: string, cb: (repos: GitRepo[] | null, error?: string) => void) {
+    this.gitCallbacks.set(aid, cb);
+    this.send({ type: 'git_worktree_remove', anid, aid, repoPath, worktreePath });
   }
 }
 

@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useRegistryStore } from '../store';
 import { browserSocket } from '../ws';
 import { nanoid } from 'nanoid';
-import type { AgentnodeView, SessionMeta } from '../lib/protocol';
-import { Plus, X, Server, Copy, Check, Cable, ChevronDown } from 'lucide-react';
+import type { AgentnodeView, GitRepo, SessionMeta } from '../lib/protocol';
+import { Plus, X, Server, Copy, Check, Cable, ChevronDown, Settings, GitBranch, FolderGit2, Trash2, ChevronRight } from 'lucide-react';
 
 // ── Add Node Modal ────────────────────────────────────────────────────────────
 
@@ -194,9 +194,18 @@ function CwdCombobox({ value, onChange }: { value: string; onChange: (v: string)
 
 // ── New Session Modal ─────────────────────────────────────────────────────────
 
-function NewSessionModal({ onClose, onCreate }: { onClose: () => void; onCreate: (cwd: string, name: string) => void }) {
+function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: () => void; onCreate: (cwd: string, name: string) => void }) {
   const [cwd, setCwd] = useState('~');
   const [name, setName] = useState('');
+  const [repos, setRepos] = useState<GitRepo[] | null>(null);
+
+  useEffect(() => {
+    browserSocket.gitRepoList(anid, nanoid(8), (r) => { if (r) setRepos(r); });
+  }, [anid]);
+
+  const worktrees = repos?.flatMap(r => r.worktrees.map(wt => ({ ...wt, repoPath: r.localPath }))) ?? [];
+
+  const shortPath = (p: string) => p.replace(/^\/home\/[^/]+/, '~');
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -211,10 +220,35 @@ function NewSessionModal({ onClose, onCreate }: { onClose: () => void; onCreate:
           <Plus size={18} /> New Session
         </h3>
         <form onSubmit={submit}>
-          <div className="form-control mt-4">
-            <label className="label"><span className="label-text">Working directory</span></label>
-            <CwdCombobox value={cwd} onChange={setCwd} />
-          </div>
+          {repos === null ? (
+            <div className="flex justify-center py-4"><span className="loading loading-spinner loading-sm" /></div>
+          ) : worktrees.length > 0 ? (
+            <div className="form-control mt-4">
+              <label className="label"><span className="label-text">Worktree</span></label>
+              <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                {worktrees.map(wt => (
+                  <button
+                    key={wt.path}
+                    type="button"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${cwd === wt.path ? 'bg-primary text-primary-content' : 'hover:bg-base-200'}`}
+                    onClick={() => setCwd(wt.path)}
+                  >
+                    <GitBranch size={13} className="shrink-0 opacity-60" />
+                    <code className="font-mono flex-1 truncate">{wt.branch ?? '(detached)'}</code>
+                    <span className="font-mono text-xs opacity-60 truncate max-w-[40%]" title={wt.path}>{shortPath(wt.path)}</span>
+                    {wt.isMain && <span className="badge badge-xs badge-ghost shrink-0">main</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="divider text-xs text-base-content/40 my-4">or enter path</div>
+              <CwdCombobox value={cwd} onChange={setCwd} />
+            </div>
+          ) : (
+            <div className="form-control mt-4">
+              <label className="label"><span className="label-text">Working directory</span></label>
+              <CwdCombobox value={cwd} onChange={setCwd} />
+            </div>
+          )}
           <div className="form-control mt-3">
             <label className="label"><span className="label-text">Name <span className="text-base-content/40">(optional)</span></span></label>
             <input
@@ -236,6 +270,274 @@ function NewSessionModal({ onClose, onCreate }: { onClose: () => void; onCreate:
     </div>
   );
 }
+
+// ── Git Manager Modal ─────────────────────────────────────────────────────────
+
+type GitView = 'repos' | 'clone' | 'add-existing' | 'add-worktree';
+
+function GitManagerModal({ anid, nodeName, onClose }: { anid: string; nodeName: string; onClose: () => void }) {
+  const [repos, setRepos] = useState<GitRepo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<GitView>('repos');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [worktreeTarget, setWorktreeTarget] = useState<string | null>(null);
+
+  // Clone form
+  const [cloneUrl, setCloneUrl] = useState('');
+  const [clonePath, setClonePath] = useState('');
+
+  // Add existing form
+  const [addPath, setAddPath] = useState('');
+
+  // Add worktree form
+  const [wtBranch, setWtBranch] = useState('');
+
+  const wtDerivedPath = (() => {
+    if (!worktreeTarget || !wtBranch.trim()) return '';
+    const lastSlash = worktreeTarget.lastIndexOf('/');
+    return `${worktreeTarget.slice(0, lastSlash)}/${wtBranch.trim()}`;
+  })();
+
+  const refresh = (aid = nanoid(8)) => {
+    setLoading(true);
+    setError(null);
+    browserSocket.gitRepoList(anid, aid, (r, err) => {
+      setLoading(false);
+      if (err) { setError(err); return; }
+      setRepos(r);
+    });
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const toggleExpand = (localPath: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(localPath) ? next.delete(localPath) : next.add(localPath);
+      return next;
+    });
+  };
+
+  const handleClone = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cloneUrl.trim() || !clonePath.trim()) return;
+    setLoading(true);
+    setError(null);
+    browserSocket.gitClone(anid, nanoid(8), cloneUrl.trim(), clonePath.trim(), (r, err) => {
+      setLoading(false);
+      if (err) { setError(err); return; }
+      setRepos(r);
+      setView('repos');
+      setCloneUrl(''); setClonePath('');
+    });
+  };
+
+  const handleAddExisting = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addPath.trim()) return;
+    setLoading(true);
+    setError(null);
+    browserSocket.gitRepoAdd(anid, nanoid(8), addPath.trim(), (r, err) => {
+      setLoading(false);
+      if (err) { setError(err); return; }
+      setRepos(r);
+      setView('repos');
+      setAddPath('');
+    });
+  };
+
+  const handleRemoveRepo = (localPath: string) => {
+    setLoading(true);
+    browserSocket.gitRepoRemove(anid, nanoid(8), localPath, (r, err) => {
+      setLoading(false);
+      if (err) { setError(err); return; }
+      setRepos(r);
+    });
+  };
+
+  const handleAddWorktree = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!worktreeTarget || !wtBranch.trim()) return;
+    setLoading(true);
+    setError(null);
+    browserSocket.gitWorktreeAdd(anid, nanoid(8), worktreeTarget, '', wtBranch.trim(), true, (r, err) => {
+      setLoading(false);
+      if (err) { setError(err); return; }
+      setRepos(r);
+      setView('repos');
+      setWtBranch('');
+    });
+  };
+
+  const handleRemoveWorktree = (repoPath: string, worktreePath: string) => {
+    setLoading(true);
+    browserSocket.gitWorktreeRemove(anid, nanoid(8), repoPath, worktreePath, (r, err) => {
+      setLoading(false);
+      if (err) { setError(err); return; }
+      setRepos(r);
+    });
+  };
+
+  const shortPath = (p: string) => p.replace(/^\/home\/[^/]+/, '~');
+
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box max-w-lg">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg flex items-center gap-2">
+            <FolderGit2 size={18} />
+            Git — {nodeName}
+          </h3>
+          <button className="btn btn-sm btn-ghost btn-circle" onClick={onClose}><X size={15} /></button>
+        </div>
+
+        {error && (
+          <div className="alert alert-error mb-3 py-2 text-sm">
+            <span className="font-mono break-all">{error}</span>
+            <button className="btn btn-xs btn-ghost ml-auto" onClick={() => setError(null)}>Dismiss</button>
+          </div>
+        )}
+
+        {/* ── Repo list ── */}
+        {view === 'repos' && (
+          <>
+            {repos === null && loading && (
+              <div className="flex justify-center py-8"><span className="loading loading-spinner" /></div>
+            )}
+            {repos !== null && repos.length === 0 && (
+              <p className="text-sm text-base-content/50 text-center py-6">No repos added yet.</p>
+            )}
+            {repos !== null && repos.length > 0 && (
+              <div className="space-y-2 max-h-80 overflow-y-auto mb-4">
+                {repos.map(repo => (
+                  <div key={repo.localPath} className="border border-base-300 rounded-lg overflow-hidden">
+                    <div
+                      className="flex items-center gap-2 px-3 py-2 bg-base-200 cursor-pointer hover:bg-base-300 transition-colors"
+                      onClick={() => toggleExpand(repo.localPath)}
+                    >
+                      <ChevronRight size={13} className={`shrink-0 text-base-content/50 transition-transform ${expanded.has(repo.localPath) ? 'rotate-90' : ''}`} />
+                      <FolderGit2 size={14} className="shrink-0 text-base-content/60" />
+                      <span className="text-sm font-mono truncate flex-1" title={repo.localPath}>{shortPath(repo.localPath)}</span>
+                      <button
+                        className="shrink-0 btn btn-xs btn-ghost gap-1 text-base-content/50 hover:text-primary"
+                        onClick={e => { e.stopPropagation(); setWorktreeTarget(repo.localPath); setView('add-worktree'); }}
+                        title="Add worktree"
+                      ><GitBranch size={12} /> Worktree</button>
+                      <button
+                        className="shrink-0 btn btn-xs btn-ghost text-error hover:bg-error/10"
+                        onClick={e => { e.stopPropagation(); handleRemoveRepo(repo.localPath); }}
+                        title="Remove repo"
+                      ><Trash2 size={12} /></button>
+                    </div>
+                    {expanded.has(repo.localPath) && (
+                      <div className="divide-y divide-base-300">
+                        {repo.worktrees.length === 0 && (
+                          <p className="px-4 py-2 text-xs text-base-content/40">No worktrees found</p>
+                        )}
+                        {repo.worktrees.map(wt => (
+                          <div key={wt.path} className="flex items-center gap-2 px-4 py-1.5">
+                            <GitBranch size={12} className="shrink-0 text-base-content/40" />
+                            <code className="text-xs text-primary truncate">{wt.branch ?? '(detached)'}</code>
+                            <span className="text-xs text-base-content/40 font-mono truncate flex-1" title={wt.path}>{shortPath(wt.path)}</span>
+                            {wt.isMain ? (
+                              <span className="text-[10px] badge badge-ghost">main</span>
+                            ) : (
+                              <button
+                                className="shrink-0 btn btn-xs btn-ghost text-error hover:bg-error/10"
+                                onClick={() => handleRemoveWorktree(repo.localPath, wt.path)}
+                                title="Remove worktree"
+                              ><Trash2 size={11} /></button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button className="btn btn-sm btn-primary gap-1" onClick={() => setView('clone')}>
+                <Plus size={13} /> Clone repo
+              </button>
+              <button className="btn btn-sm btn-ghost gap-1" onClick={() => setView('add-existing')}>
+                <Plus size={13} /> Add existing
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── Clone ── */}
+        {view === 'clone' && (
+          <form onSubmit={handleClone}>
+            <button type="button" className="btn btn-xs btn-ghost mb-3" onClick={() => setView('repos')}>← Back</button>
+            <div className="form-control">
+              <label className="label"><span className="label-text">Repository URL</span></label>
+              <input className="input input-bordered font-mono text-sm" value={cloneUrl} onChange={e => setCloneUrl(e.target.value)} placeholder="https://github.com/user/repo.git" autoFocus />
+            </div>
+            <div className="form-control mt-3">
+              <label className="label"><span className="label-text">Clone to</span></label>
+              <input className="input input-bordered font-mono text-sm" value={clonePath} onChange={e => setClonePath(e.target.value)} placeholder="~/projects/repo" />
+            </div>
+            <div className="modal-action">
+              <button type="button" className="btn btn-ghost" onClick={() => setView('repos')}>Cancel</button>
+              <button type="submit" className="btn btn-primary gap-1" disabled={loading || !cloneUrl.trim() || !clonePath.trim()}>
+                {loading ? <span className="loading loading-spinner loading-xs" /> : <Plus size={14} />} Clone
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── Add existing ── */}
+        {view === 'add-existing' && (
+          <form onSubmit={handleAddExisting}>
+            <button type="button" className="btn btn-xs btn-ghost mb-3" onClick={() => setView('repos')}>← Back</button>
+            <div className="form-control">
+              <label className="label"><span className="label-text">Local path to existing repo</span></label>
+              <input className="input input-bordered font-mono text-sm" value={addPath} onChange={e => setAddPath(e.target.value)} placeholder="~/projects/myrepo" autoFocus />
+            </div>
+            <div className="modal-action">
+              <button type="button" className="btn btn-ghost" onClick={() => setView('repos')}>Cancel</button>
+              <button type="submit" className="btn btn-primary gap-1" disabled={loading || !addPath.trim()}>
+                {loading ? <span className="loading loading-spinner loading-xs" /> : <Plus size={14} />} Add
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── Add worktree ── */}
+        {view === 'add-worktree' && (
+          <form onSubmit={handleAddWorktree}>
+            <button type="button" className="btn btn-xs btn-ghost mb-3" onClick={() => setView('repos')}>← Back</button>
+            <p className="text-xs text-base-content/50 font-mono mb-3 truncate" title={worktreeTarget ?? ''}>
+              {worktreeTarget ? shortPath(worktreeTarget) : ''}
+            </p>
+            <div className="form-control">
+              <label className="label"><span className="label-text">Branch name</span></label>
+              <input className="input input-bordered font-mono text-sm" value={wtBranch} onChange={e => setWtBranch(e.target.value)} placeholder="feature-x" autoFocus />
+            </div>
+            {wtDerivedPath && (
+              <p className="mt-3 text-xs font-mono text-base-content/50 truncate" title={wtDerivedPath}>
+                → {shortPath(wtDerivedPath)}
+              </p>
+            )}
+
+            <div className="modal-action">
+              <button type="button" className="btn btn-ghost" onClick={() => setView('repos')}>Cancel</button>
+              <button type="submit" className="btn btn-primary gap-1" disabled={loading || !wtBranch.trim()}>
+                {loading ? <span className="loading loading-spinner loading-xs" /> : <GitBranch size={14} />} Add Worktree
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+      <div className="modal-backdrop" onClick={onClose} />
+    </div>
+  );
+}
+
+// ── Claude Code Icon ──────────────────────────────────────────────────────────
 
 function ClaudeCodeIcon({ size = 11 }: { size?: number }) {
   return (
@@ -366,6 +668,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
   const [showAdd, setShowAdd] = useState(false);
   const [newSessionAnid, setNewSessionAnid] = useState<string | null>(null);
   const [killTarget, setKillTarget] = useState<{ anid: string; sid: string } | null>(null);
+  const [gitManagerAnid, setGitManagerAnid] = useState<string | null>(null);
 
   const handleNew = (anid: string) => {
     setNewSessionAnid(anid);
@@ -415,6 +718,11 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
                 {node.online ? 'online' : 'offline'}
               </span>
               <div className="flex-1 h-px bg-base-content/15" />
+              <button
+                className="shrink-0 btn btn-xs btn-ghost btn-circle text-base-content/40 hover:text-base-content"
+                onClick={() => setGitManagerAnid(node.id)}
+                title="Manage git repos"
+              ><Settings size={12} /></button>
             </div>
 
             <div className="flex flex-wrap gap-2 px-3">
@@ -443,6 +751,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
       {showAdd && <AddAgentnodeModal onClose={() => setShowAdd(false)} />}
       {newSessionAnid && (
         <NewSessionModal
+          anid={newSessionAnid}
           onClose={() => setNewSessionAnid(null)}
           onCreate={handleCreate}
         />
@@ -452,6 +761,13 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
           message="Kill this session?"
           onConfirm={() => browserSocket.kill(killTarget.anid, killTarget.sid)}
           onClose={() => setKillTarget(null)}
+        />
+      )}
+      {gitManagerAnid && (
+        <GitManagerModal
+          anid={gitManagerAnid}
+          nodeName={agentnodes.find(n => n.id === gitManagerAnid)?.name ?? gitManagerAnid}
+          onClose={() => setGitManagerAnid(null)}
         />
       )}
     </div>

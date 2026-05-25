@@ -1,3 +1,15 @@
+export interface GitWorktree {
+  path: string;
+  branch: string | null;
+  isMain: boolean;
+}
+
+export interface GitRepo {
+  localPath: string;
+  url?: string;
+  worktrees: GitWorktree[];
+}
+
 export interface SessionMeta {
   id: string;
   name: string;
@@ -29,6 +41,8 @@ export type ServerMsg =
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
   | { type: 'session_exit'; anid: string; sid: string; code: number }
   | { type: 'image_uploaded'; anid: string; aid: string; path: string }
+  | { type: 'git_repos'; anid: string; aid: string; repos: GitRepo[] }
+  | { type: 'git_result'; anid: string; aid: string; success: boolean; message: string }
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {

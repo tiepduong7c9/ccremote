@@ -6,6 +6,8 @@ class BrowserHub {
     this.browsers = new Set();
     // aid -> { ws, anid, sid }
     this.attachments = new Map();
+    // aid -> ws (for git request-response pairs)
+    this._gitRequests = new Map();
 
     agentnodeHub.on('online', (payload) => this._broadcast({ type: 'agentnode_online', agentnode: payload }));
     agentnodeHub.on('offline', ({ anid }) => {
@@ -38,6 +40,9 @@ class BrowserHub {
         this._hub.send(att.anid, { type: 'detach', aid });
         this.attachments.delete(aid);
       }
+    }
+    for (const [aid, reqWs] of this._gitRequests) {
+      if (reqWs === ws) this._gitRequests.delete(aid);
     }
   }
 
@@ -85,12 +90,32 @@ class BrowserHub {
         this._hub.send(anid, { type: 'upload_image', aid, sid: msg.sid, data: msg.data, ext: msg.ext });
         break;
 
+      case 'git_repo_list':
+      case 'git_clone':
+      case 'git_repo_add':
+      case 'git_repo_remove':
+      case 'git_worktree_add':
+      case 'git_worktree_remove':
+        this._gitRequests.set(msg.aid, ws);
+        this._hub.send(anid, msg);
+        break;
+
       default:
         this._sendTo(ws, { type: 'server_error', message: `Unknown message type: ${msg.type}` });
     }
   }
 
   _routeRelay(anid, msg) {
+    // Git responses route back to the requesting browser tab
+    if (msg.type === 'git_repos' || msg.type === 'git_result') {
+      const ws = this._gitRequests.get(msg.aid);
+      if (ws) {
+        this._sendTo(ws, { ...msg, anid });
+        this._gitRequests.delete(msg.aid);
+      }
+      return;
+    }
+
     if (msg.aid !== undefined) {
       const att = this.attachments.get(msg.aid);
       if (att) {
