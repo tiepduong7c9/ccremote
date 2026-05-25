@@ -26,8 +26,14 @@ export default function TerminalTabs({ anid, parentSid }: Props) {
   // If the active tab was killed, fall back to the parent
   const resolvedActive = tabs.find(t => t.id === activeTabSid) ? activeTabSid : parentSid;
 
-  // Auto-select newly created bash tabs
+  // Reset baseline when switching sessions so the auto-select below doesn't
+  // misfire against a different session's prior children count.
   const prevChildrenLengthRef = useRef(children.length);
+  useEffect(() => {
+    prevChildrenLengthRef.current = children.length;
+  }, [parentSid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-select newly created bash tabs
   useEffect(() => {
     if (children.length > prevChildrenLengthRef.current) {
       const newest = children[children.length - 1];
