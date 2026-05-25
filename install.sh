@@ -111,12 +111,8 @@ if [[ "$MODE" == "update" ]]; then
     echo "Restarting ccremote-server..."
     systemctl --user restart ccremote-server
   fi
-  # Bounce daemon so it picks up new code on next use
-  PID_FILE="$HOME/.ccremote/daemon.pid"
-  if [[ -f "$PID_FILE" ]]; then
-    PID="$(cat "$PID_FILE")"
-    kill -0 "$PID" 2>/dev/null && kill "$PID" && echo "ccremote daemon stopped (will auto-restart on next use)"
-  fi
+  # Restart daemon so it picks up new code and reconnects to server
+  ccremote link
   echo "Done."
   exit 0
 fi
