@@ -102,10 +102,9 @@ if [[ "$MODE" == "update" ]]; then
   else
     curl -fsSL "$REPO_TARBALL" | tar -xz -C "$ROOT" --strip-components=1
   fi
-  # Reinstall deps + re-link agentnode CLI + rebuild frontend
+  # Reinstall deps + rebuild frontend
   cd "$ROOT" && npm install
-  cd "$ROOT/agentnode" && npm link
-  cd "$ROOT" && npm run build
+  npm run build
   # Restart server service if running
   if systemctl --user is-active --quiet ccremote-server 2>/dev/null; then
     echo "Restarting ccremote-server..."
