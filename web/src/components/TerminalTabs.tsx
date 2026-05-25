@@ -65,7 +65,7 @@ export default function TerminalTabs({ anid, parentSid }: Props) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') {
+      if (e.ctrlKey && e.altKey && !e.shiftKey && e.code === 'KeyV') {
         e.preventDefault();
         handlePasteImage();
       }
@@ -146,7 +146,7 @@ export default function TerminalTabs({ anid, parentSid }: Props) {
           onClick={handlePasteImage}
           onMouseDown={(e) => e.preventDefault()}
           className="flex items-center gap-1 px-3 py-2 text-xs text-base-content/40 hover:text-base-content/70 hover:bg-base-100/50 transition-colors shrink-0"
-          title="Paste image from clipboard (Ctrl+Shift+V)"
+          title="Paste image from clipboard (Ctrl+Alt+V)"
         >
           <ImageIcon size={13} />
         </button>
