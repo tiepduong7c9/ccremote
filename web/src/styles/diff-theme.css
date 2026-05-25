@@ -1,0 +1,4 @@
+/* Monaco editor container — fill height passed to it */
+.monaco-editor .overflow-guard {
+  border-radius: 0;
+}

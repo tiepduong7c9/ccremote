@@ -324,6 +324,23 @@ class ServerLink {
         break;
       }
 
+      case 'git_status': {
+        const { aid, cwd } = msg;
+        this._git.status(cwd)
+          .then(({ branch, files }) => this._send({ type: 'git_status_result', aid, branch, files }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'git_diff': {
+        const { aid, cwd, path: filePath } = msg;
+        this._git.fileContents(cwd, filePath)
+          .then(({ oldContent, newContent, language, isBinary, tooLarge }) =>
+            this._send({ type: 'git_diff_result', aid, path: filePath, oldContent, newContent, language, isBinary, tooLarge }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
       default:
         break;
     }
