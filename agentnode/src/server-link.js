@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
 const { encode, MessageParser } = require('./protocol');
-const GitManager = require('./git-manager');
+const WorkspaceManager = require('./workspace-manager');
 
 const pkg = require('../package.json');
 
@@ -20,7 +20,7 @@ class ServerLink {
     this._rejectedCount = 0;
     this._stopped = false;
     this._retryTimer = null;
-    this._git = new GitManager();
+    this._git = new WorkspaceManager();
 
     // Hook into manager._persist to push session updates to the server
     const original = manager._persist.bind(manager);
@@ -345,6 +345,31 @@ class ServerLink {
         this._git.fileContents(cwd, filePath)
           .then(({ oldContent, newContent, language, isBinary, tooLarge }) =>
             this._send({ type: 'git_diff_result', aid, path: filePath, oldContent, newContent, language, isBinary, tooLarge }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'file_list': {
+        const { aid, cwd } = msg;
+        this._git.listFiles(cwd)
+          .then(({ files }) => this._send({ type: 'file_list_result', aid, files }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'file_read': {
+        const { aid, cwd, path: filePath } = msg;
+        this._git.readFile(cwd, filePath)
+          .then(({ content, language, isBinary, tooLarge }) =>
+            this._send({ type: 'file_read_result', aid, path: filePath, content, language, isBinary, tooLarge }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'file_write': {
+        const { aid, cwd, path: filePath, content } = msg;
+        this._git.writeFile(cwd, filePath, content)
+          .then(() => this._send({ type: 'file_write_result', aid, path: filePath }))
           .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
         break;
       }

@@ -3,5 +3,6 @@
 .env
 server/data/
 web/dist/
+web/tsconfig.tsbuildinfo
 .vite/
 .tmp/

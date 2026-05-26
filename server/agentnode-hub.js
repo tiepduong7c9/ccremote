@@ -66,6 +66,10 @@ class AgentnodeHub extends EventEmitter {
       case 'git_result':
       case 'git_status_result':
       case 'git_diff_result':
+      case 'git_pull_result':
+      case 'file_list_result':
+      case 'file_read_result':
+      case 'file_write_result':
         this.emit('relay', { anid: record.id, msg });
         break;
 

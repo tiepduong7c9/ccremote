@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { GitBranch, RefreshCw, List, FolderTree, ChevronRight, ChevronLeft, CloudDownload } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { GitBranch, RefreshCw, List, FolderTree, CloudDownload } from 'lucide-react';
 import { useGitStore } from '../git-store';
 import GitFileList from './GitFileList';
 import GitFileTree from './GitFileTree';
@@ -11,45 +11,34 @@ interface Props {
   cwd: string;
 }
 
-export default function GitChangesPanel({ anid, sid, cwd }: Props) {
-  const { statusBySid, viewMode, panelCollapsed, setViewMode, setPanelCollapsed, loadStatus, pull } = useGitStore();
+export default function GitChangesTab({ anid, sid, cwd }: Props) {
+  const { statusBySid, viewMode, setViewMode, loadStatus, pull } = useGitStore();
   const status = statusBySid.get(sid);
   const [diffFile, setDiffFile] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (cwd) loadStatus(anid, sid, cwd);
+  }, [anid, sid, cwd]);
+
   const handleRefresh = () => { if (cwd) loadStatus(anid, sid, cwd); };
   const handlePull = () => { if (cwd) pull(anid, sid, cwd); };
 
-  const handleOpenFile = (p: string) => {
+  const handleOpen = (p: string) => {
     setSelectedFile(p);
     setDiffFile(p);
   };
 
-  useEffect(() => {
-    if (cwd && !panelCollapsed) loadStatus(anid, sid, cwd);
-  }, [anid, sid, cwd]);
-
-  // Collapsed rail
-  if (panelCollapsed) {
-    return (
-      <div className="w-8 shrink-0 border-l border-base-300 bg-base-200 flex flex-col items-center pt-2">
-        <button
-          className="btn btn-xs btn-ghost p-0 w-6 h-6"
-          onClick={() => setPanelCollapsed(false)}
-          title="Show changes"
-        >
-          <ChevronLeft size={14} />
-        </button>
-      </div>
-    );
-  }
-
   return (
     <>
-      <div className="w-72 shrink-0 border-l border-base-300 bg-base-200 flex flex-col h-full overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center gap-1 px-2 h-10 border-b border-base-300 shrink-0">
-          <span className="text-xs font-semibold text-base-content/60 flex-1 min-w-0">Changes</span>
+      <div className="flex flex-col flex-1 min-h-0">
+        {/* Toolbar */}
+        <div className="flex items-center gap-1 px-2 h-8 border-b border-base-300 shrink-0">
+          <span className="text-xs text-base-content/40 flex-1 truncate">
+            {status && !status.loading && !status.error && status.files.length > 0
+              ? `${status.files.length} file${status.files.length !== 1 ? 's' : ''} changed`
+              : ''}
+          </span>
           <button
             className="btn btn-xs btn-ghost p-0 w-6 h-6"
             onClick={handleRefresh}
@@ -71,13 +60,6 @@ export default function GitChangesPanel({ anid, sid, cwd }: Props) {
             title="Tree view"
           >
             <FolderTree size={12} />
-          </button>
-          <button
-            className="btn btn-xs btn-ghost p-0 w-6 h-6"
-            onClick={() => setPanelCollapsed(true)}
-            title="Collapse"
-          >
-            <ChevronRight size={14} />
           </button>
         </div>
 
@@ -109,19 +91,16 @@ export default function GitChangesPanel({ anid, sid, cwd }: Props) {
           )}
           {status && !status.loading && !status.error && status.files.length > 0 && (
             <>
-              <div className="px-3 py-1 text-xs text-base-content/40 border-b border-base-300">
-                {status.files.length} file{status.files.length !== 1 ? 's' : ''} changed
-              </div>
               {viewMode === 'flat' ? (
-                <GitFileList files={status.files} selectedFile={selectedFile} onOpen={handleOpenFile} />
+                <GitFileList files={status.files} selectedFile={selectedFile} onOpen={handleOpen} />
               ) : (
-                <GitFileTree files={status.files} selectedFile={selectedFile} onOpen={handleOpenFile} />
+                <GitFileTree files={status.files} selectedFile={selectedFile} onOpen={handleOpen} />
               )}
             </>
           )}
         </div>
 
-        {/* Footer: branch + pull */}
+        {/* Footer */}
         <div className="flex items-center gap-1 px-2 h-9 border-t border-base-300 shrink-0">
           <GitBranch size={12} className="text-base-content/40 shrink-0" />
           <span className="text-xs font-mono text-base-content/60 truncate flex-1 min-w-0">
@@ -151,7 +130,6 @@ export default function GitChangesPanel({ anid, sid, cwd }: Props) {
           onClose={() => setDiffFile(null)}
         />
       )}
-
     </>
   );
 }
