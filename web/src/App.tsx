@@ -6,7 +6,7 @@ import SessionCards from './components/SessionCards';
 import TerminalTabs from './components/TerminalTabs';
 import ThemeToggle from './components/ThemeToggle';
 import NotificationToggle from './components/NotificationToggle';
-import GitChangesPanel from './components/GitChangesPanel';
+import RightPanel from './components/RightPanel';
 import { Folder, TerminalSquare, ChevronRight } from 'lucide-react';
 
 export default function App() {
@@ -75,7 +75,7 @@ export default function App() {
         </main>
       </div>
       {selectedAnid && selectedSid && (
-        <GitChangesPanel anid={selectedAnid} sid={selectedSid} cwd={session?.cwd ?? ''} />
+        <RightPanel anid={selectedAnid} sid={selectedSid} cwd={session?.cwd ?? ''} />
       )}
     </div>
   );
