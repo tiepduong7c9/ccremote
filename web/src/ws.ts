@@ -37,6 +37,10 @@ class BrowserSocket {
   private repoCallbacks: Map<string, (repos: GitRepo[] | null, error?: string) => void> = new Map();
   private statusCallbacks: Map<string, (result: { branch: string; files: GitFileChange[] } | null, error?: string) => void> = new Map();
   private diffCallbacks: Map<string, (result: { oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
+  private pullCallbacks: Map<string, (result: { output: string } | null, error?: string) => void> = new Map();
+  private fileListCallbacks: Map<string, (files: string[] | null, error?: string) => void> = new Map();
+  private fileReadCallbacks: Map<string, (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
+  private fileWriteCallbacks: Map<string, (error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -158,7 +162,15 @@ class BrowserSocket {
         const statusCb = this.statusCallbacks.get(msg.aid);
         if (statusCb) { statusCb(null, msg.message); this.statusCallbacks.delete(msg.aid); break; }
         const diffCb = this.diffCallbacks.get(msg.aid);
-        if (diffCb) { diffCb(null, msg.message); this.diffCallbacks.delete(msg.aid); }
+        if (diffCb) { diffCb(null, msg.message); this.diffCallbacks.delete(msg.aid); break; }
+        const pullCb = this.pullCallbacks.get(msg.aid);
+        if (pullCb) { pullCb(null, msg.message); this.pullCallbacks.delete(msg.aid); break; }
+        const fileListCb = this.fileListCallbacks.get(msg.aid);
+        if (fileListCb) { fileListCb(null, msg.message); this.fileListCallbacks.delete(msg.aid); break; }
+        const fileReadCb = this.fileReadCallbacks.get(msg.aid);
+        if (fileReadCb) { fileReadCb(null, msg.message); this.fileReadCallbacks.delete(msg.aid); break; }
+        const fileWriteCb = this.fileWriteCallbacks.get(msg.aid);
+        if (fileWriteCb) { fileWriteCb(msg.message); this.fileWriteCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -171,6 +183,30 @@ class BrowserSocket {
       case 'git_diff_result': {
         const cb = this.diffCallbacks.get(msg.aid);
         if (cb) { cb({ oldContent: msg.oldContent, newContent: msg.newContent, language: msg.language, isBinary: msg.isBinary, tooLarge: msg.tooLarge }); this.diffCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_pull_result': {
+        const cb = this.pullCallbacks.get(msg.aid);
+        if (cb) { cb({ output: msg.output }); this.pullCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'file_list_result': {
+        const cb = this.fileListCallbacks.get(msg.aid);
+        if (cb) { cb(msg.files); this.fileListCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'file_read_result': {
+        const cb = this.fileReadCallbacks.get(msg.aid);
+        if (cb) { cb({ content: msg.content, language: msg.language, isBinary: msg.isBinary, tooLarge: msg.tooLarge }); this.fileReadCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'file_write_result': {
+        const cb = this.fileWriteCallbacks.get(msg.aid);
+        if (cb) { cb(); this.fileWriteCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -301,6 +337,26 @@ class BrowserSocket {
   gitDiff(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void) {
     this.diffCallbacks.set(aid, cb);
     this.send({ type: 'git_diff', anid, aid, cwd, path: filePath });
+  }
+
+  gitPull(anid: string, aid: string, cwd: string, cb: (result: { output: string } | null, error?: string) => void) {
+    this.pullCallbacks.set(aid, cb);
+    this.send({ type: 'git_pull', anid, aid, cwd });
+  }
+
+  fileList(anid: string, aid: string, cwd: string, cb: (files: string[] | null, error?: string) => void) {
+    this.fileListCallbacks.set(aid, cb);
+    this.send({ type: 'file_list', anid, aid, cwd });
+  }
+
+  fileRead(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void) {
+    this.fileReadCallbacks.set(aid, cb);
+    this.send({ type: 'file_read', anid, aid, cwd, path: filePath });
+  }
+
+  fileWrite(anid: string, aid: string, cwd: string, filePath: string, content: string, cb: (error?: string) => void) {
+    this.fileWriteCallbacks.set(aid, cb);
+    this.send({ type: 'file_write', anid, aid, cwd, path: filePath, content });
   }
 }
 

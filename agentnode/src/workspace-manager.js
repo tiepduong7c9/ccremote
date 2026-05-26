@@ -73,7 +73,7 @@ function parseWorktrees(output) {
   return worktrees;
 }
 
-class GitManager {
+class WorkspaceManager {
   constructor() {
     this._repos = [];
     this._load();
@@ -184,6 +184,55 @@ class GitManager {
     return { branch, files };
   }
 
+  async listFiles(cwd) {
+    const abs = resolvePath(cwd);
+    const SKIP = new Set(['.git', 'node_modules', '.next', 'dist', 'build', '.cache', '__pycache__', '.venv', 'venv', 'coverage', '.nyc_output', '.turbo', '.svelte-kit']);
+    const files = [];
+    const MAX = 5000;
+    const MAX_DEPTH = 12;
+
+    const walk = (dir, base, depth) => {
+      if (files.length >= MAX || depth > MAX_DEPTH) return;
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (SKIP.has(entry.name)) continue;
+        const rel = base ? `${base}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          walk(path.join(dir, entry.name), rel, depth + 1);
+        } else if (entry.isFile()) {
+          files.push(rel);
+          if (files.length >= MAX) return;
+        }
+      }
+    };
+
+    walk(abs, '', 0);
+    return { files };
+  }
+
+  async readFile(cwd, filePath) {
+    const abs = resolvePath(cwd);
+    const fullPath = path.resolve(abs, filePath);
+    if (!fullPath.startsWith(abs + path.sep) && fullPath !== abs) throw new Error('Path traversal denied');
+    const MAX = 2 * 1024 * 1024;
+    const language = detectLanguage(filePath);
+    let stat;
+    try { stat = fs.statSync(fullPath); } catch { throw new Error(`File not found: ${filePath}`); }
+    if (stat.size > MAX) return { content: '', language, isBinary: false, tooLarge: true };
+    const buf = fs.readFileSync(fullPath);
+    if (buf.indexOf(0) !== -1) return { content: '', language, isBinary: true, tooLarge: false };
+    return { content: buf.toString('utf8'), language, isBinary: false, tooLarge: false };
+  }
+
+  async writeFile(cwd, filePath, content) {
+    const abs = resolvePath(cwd);
+    const fullPath = path.resolve(abs, filePath);
+    if (!fullPath.startsWith(abs + path.sep) && fullPath !== abs) throw new Error('Path traversal denied');
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content, 'utf8');
+  }
+
   async fileContents(cwd, filePath) {
     const abs = resolvePath(cwd);
     const fullPath = path.join(abs, filePath);
@@ -220,4 +269,4 @@ class GitManager {
   }
 }
 
-module.exports = GitManager;
+module.exports = WorkspaceManager;

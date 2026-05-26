@@ -7,6 +7,8 @@ export interface GitStatusEntry {
   branch: string;
   files: GitFileChange[];
   loading: boolean;
+  pulling: boolean;
+  pullError?: string;
   error?: string;
 }
 
@@ -25,6 +27,7 @@ interface GitState {
   setViewMode: (mode: 'flat' | 'tree') => void;
   setPanelCollapsed: (collapsed: boolean) => void;
   loadStatus: (anid: string, sid: string, cwd: string) => void;
+  pull: (anid: string, sid: string, cwd: string) => void;
   fetchDiff: (anid: string, cwd: string, filePath: string) => Promise<GitDiffResult>;
   clearForSession: (sid: string) => void;
 }
@@ -56,17 +59,41 @@ export const useGitStore = create<GitState>((set, get) => ({
     set(state => {
       const map = new Map(state.statusBySid);
       const existing = map.get(sid);
-      map.set(sid, { branch: existing?.branch ?? '', files: existing?.files ?? [], loading: true, error: undefined });
+      map.set(sid, { branch: existing?.branch ?? '', files: existing?.files ?? [], loading: true, pulling: existing?.pulling ?? false, error: undefined });
       return { statusBySid: map };
     });
     const aid = nanoid();
     browserSocket.gitStatus(anid, aid, cwd, (result, error) => {
       set(state => {
         const map = new Map(state.statusBySid);
+        const existing = map.get(sid);
         if (error || !result) {
-          map.set(sid, { branch: '', files: [], loading: false, error: error ?? 'Unknown error' });
+          map.set(sid, { branch: '', files: [], loading: false, pulling: existing?.pulling ?? false, error: error ?? 'Unknown error' });
         } else {
-          map.set(sid, { branch: result.branch, files: result.files, loading: false });
+          map.set(sid, { branch: result.branch, files: result.files, loading: false, pulling: existing?.pulling ?? false });
+        }
+        return { statusBySid: map };
+      });
+    });
+  },
+
+  pull: (anid, sid, cwd) => {
+    set(state => {
+      const map = new Map(state.statusBySid);
+      const existing = map.get(sid);
+      map.set(sid, { branch: existing?.branch ?? '', files: existing?.files ?? [], loading: existing?.loading ?? false, pulling: true, pullError: undefined });
+      return { statusBySid: map };
+    });
+    const aid = nanoid();
+    browserSocket.gitPull(anid, aid, cwd, (result, error) => {
+      set(state => {
+        const map = new Map(state.statusBySid);
+        const existing = map.get(sid);
+        if (error || !result) {
+          map.set(sid, { ...(existing ?? { branch: '', files: [], loading: false }), pulling: false, pullError: error ?? 'Pull failed' });
+        } else {
+          map.set(sid, { ...(existing ?? { branch: '', files: [], loading: false }), pulling: false, pullError: undefined });
+          get().loadStatus(anid, sid, cwd);
         }
         return { statusBySid: map };
       });
