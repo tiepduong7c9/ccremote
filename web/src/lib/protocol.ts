@@ -59,10 +59,12 @@ export type ServerMsg =
   | { type: 'file_read_result'; anid: string; aid: string; path: string; content: string; language: string; isBinary: boolean; tooLarge: boolean }
   | { type: 'file_write_result'; anid: string; aid: string; path: string }
   | { type: 'file_delete_result'; anid: string; aid: string; path: string }
+  | { type: 'claude_md_read_result'; anid: string; aid: string; content: string }
+  | { type: 'claude_md_write_result'; anid: string; aid: string }
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'file_list' | 'file_read' | 'file_write' | 'file_delete';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'file_list' | 'file_read' | 'file_write' | 'file_delete' | 'claude_md_read' | 'claude_md_write';
   anid: string;
   aid?: string;
   sid?: string;

@@ -42,6 +42,8 @@ class BrowserSocket {
   private fileReadCallbacks: Map<string, (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
   private fileWriteCallbacks: Map<string, (error?: string) => void> = new Map();
   private fileDeleteCallbacks: Map<string, (error?: string) => void> = new Map();
+  private claudeMdReadCallbacks: Map<string, (content: string | null, error?: string) => void> = new Map();
+  private claudeMdWriteCallbacks: Map<string, (error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -173,7 +175,11 @@ class BrowserSocket {
         const fileWriteCb = this.fileWriteCallbacks.get(msg.aid);
         if (fileWriteCb) { fileWriteCb(msg.message); this.fileWriteCallbacks.delete(msg.aid); break; }
         const fileDeleteCb = this.fileDeleteCallbacks.get(msg.aid);
-        if (fileDeleteCb) { fileDeleteCb(msg.message); this.fileDeleteCallbacks.delete(msg.aid); }
+        if (fileDeleteCb) { fileDeleteCb(msg.message); this.fileDeleteCallbacks.delete(msg.aid); break; }
+        const claudeMdReadCb = this.claudeMdReadCallbacks.get(msg.aid);
+        if (claudeMdReadCb) { claudeMdReadCb(null, msg.message); this.claudeMdReadCallbacks.delete(msg.aid); break; }
+        const claudeMdWriteCb = this.claudeMdWriteCallbacks.get(msg.aid);
+        if (claudeMdWriteCb) { claudeMdWriteCb(msg.message); this.claudeMdWriteCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -219,9 +225,29 @@ class BrowserSocket {
         break;
       }
 
-      case 'server_error':
-        console.error('[ccremote]', msg.message);
+      case 'claude_md_read_result': {
+        const cb = this.claudeMdReadCallbacks.get(msg.aid);
+        if (cb) { cb(msg.content); this.claudeMdReadCallbacks.delete(msg.aid); }
         break;
+      }
+
+      case 'claude_md_write_result': {
+        const cb = this.claudeMdWriteCallbacks.get(msg.aid);
+        if (cb) { cb(); this.claudeMdWriteCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'server_error': {
+        console.error('[ccremote]', msg.message);
+        const errAid = msg.aid;
+        if (errAid) {
+          const cb1 = this.claudeMdReadCallbacks.get(errAid);
+          if (cb1) { cb1(null, msg.message); this.claudeMdReadCallbacks.delete(errAid); }
+          const cb2 = this.claudeMdWriteCallbacks.get(errAid);
+          if (cb2) { cb2(msg.message); this.claudeMdWriteCallbacks.delete(errAid); }
+        }
+        break;
+      }
     }
   }
 
@@ -371,6 +397,16 @@ class BrowserSocket {
   fileDelete(anid: string, aid: string, cwd: string, filePath: string, cb: (error?: string) => void) {
     this.fileDeleteCallbacks.set(aid, cb);
     this.send({ type: 'file_delete', anid, aid, cwd, path: filePath });
+  }
+
+  claudeMdRead(anid: string, aid: string, cb: (content: string | null, error?: string) => void) {
+    this.claudeMdReadCallbacks.set(aid, cb);
+    this.send({ type: 'claude_md_read', anid, aid });
+  }
+
+  claudeMdWrite(anid: string, aid: string, content: string, cb: (error?: string) => void) {
+    this.claudeMdWriteCallbacks.set(aid, cb);
+    this.send({ type: 'claude_md_write', anid, aid, content });
   }
 }
 

@@ -50,7 +50,7 @@ class BrowserHub {
     const { anid, aid } = msg;
 
     if (!anid || !this._hub.online.has(anid)) {
-      this._sendTo(ws, { type: 'server_error', message: `Agentnode '${anid}' not found or offline` });
+      this._sendTo(ws, { type: 'server_error', aid, message: `Agentnode '${anid}' not found or offline` });
       return;
     }
 
@@ -103,6 +103,8 @@ class BrowserHub {
       case 'file_read':
       case 'file_write':
       case 'file_delete':
+      case 'claude_md_read':
+      case 'claude_md_write':
         this._gitRequests.set(msg.aid, ws);
         this._hub.send(anid, msg);
         break;
@@ -114,7 +116,7 @@ class BrowserHub {
 
   _routeRelay(anid, msg) {
     // Git responses route back to the requesting browser tab
-    if (msg.type === 'git_repos' || msg.type === 'git_result' || msg.type === 'git_status_result' || msg.type === 'git_diff_result' || msg.type === 'git_pull_result' || msg.type === 'file_list_result' || msg.type === 'file_read_result' || msg.type === 'file_write_result' || msg.type === 'file_delete_result') {
+    if (msg.type === 'git_repos' || msg.type === 'git_result' || msg.type === 'git_status_result' || msg.type === 'git_diff_result' || msg.type === 'git_pull_result' || msg.type === 'file_list_result' || msg.type === 'file_read_result' || msg.type === 'file_write_result' || msg.type === 'file_delete_result' || msg.type === 'claude_md_read_result' || msg.type === 'claude_md_write_result') {
       const ws = this._gitRequests.get(msg.aid);
       if (ws) {
         this._sendTo(ws, { ...msg, anid });
