@@ -383,6 +383,14 @@ class ServerLink {
         break;
       }
 
+      case 'file_download': {
+        const { aid, cwd, path: filePath } = msg;
+        this._git.downloadFile(cwd, filePath)
+          .then(({ base64, size }) => this._send({ type: 'file_download_result', aid, path: filePath, base64, size }))
+          .catch(err => this._send({ type: 'file_download_result', aid, path: filePath, error: err.message }));
+        break;
+      }
+
       case 'claude_md_read': {
         const { aid } = msg;
         const mdPath = path.join(os.homedir(), '.claude', 'CLAUDE.md');

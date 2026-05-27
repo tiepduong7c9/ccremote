@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { nanoid } from 'nanoid';
-import { ChevronRight, ChevronDown, Folder, File, RefreshCw, ChevronsUp, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, File, RefreshCw, ChevronsUp, Trash2, Download } from 'lucide-react';
 import { browserSocket } from '../ws';
 import FileModal from './FileModal';
 
@@ -133,6 +133,24 @@ export default function FileTreePanel({ anid, cwd }: Props) {
     setContextMenu({ x: e.clientX, y: e.clientY, node });
   };
 
+  const handleDownload = (node: TreeNode) => {
+    setContextMenu(null);
+    const aid = nanoid();
+    browserSocket.fileDownload(anid, aid, cwd, node.fullPath, (result, err) => {
+      if (err || !result) { setError(err ?? 'Download failed'); return; }
+      const bytes = Uint8Array.from(atob(result.base64), c => c.charCodeAt(0));
+      const blob = new Blob([bytes]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = node.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    });
+  };
+
   const handleDeleteConfirm = () => {
     if (!confirmDelete) return;
     setDeleting(true);
@@ -206,6 +224,15 @@ export default function FileTreePanel({ anid, cwd }: Props) {
           className="fixed z-50 min-w-32 rounded-md border border-base-300 bg-base-100 shadow-lg py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
+          {!contextMenu.node.isDir && (
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-base-200"
+              onClick={() => handleDownload(contextMenu.node)}
+            >
+              <Download size={11} />
+              Download file
+            </button>
+          )}
           <button
             className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-error hover:bg-error/10"
             onClick={() => { setConfirmDelete(contextMenu.node); setContextMenu(null); }}

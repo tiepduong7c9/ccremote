@@ -42,6 +42,7 @@ class BrowserSocket {
   private fileReadCallbacks: Map<string, (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
   private fileWriteCallbacks: Map<string, (error?: string) => void> = new Map();
   private fileDeleteCallbacks: Map<string, (error?: string) => void> = new Map();
+  private fileDownloadCallbacks: Map<string, (result: { base64: string; size: number } | null, error?: string) => void> = new Map();
   private claudeMdReadCallbacks: Map<string, (content: string | null, error?: string) => void> = new Map();
   private claudeMdWriteCallbacks: Map<string, (error?: string) => void> = new Map();
 
@@ -210,6 +211,15 @@ class BrowserSocket {
       case 'file_read_result': {
         const cb = this.fileReadCallbacks.get(msg.aid);
         if (cb) { cb({ content: msg.content, language: msg.language, isBinary: msg.isBinary, tooLarge: msg.tooLarge }); this.fileReadCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'file_download_result': {
+        const cb = this.fileDownloadCallbacks.get(msg.aid);
+        if (cb) {
+          if (msg.error) { cb(null, msg.error); } else { cb({ base64: msg.base64!, size: msg.size! }); }
+          this.fileDownloadCallbacks.delete(msg.aid);
+        }
         break;
       }
 
@@ -397,6 +407,11 @@ class BrowserSocket {
   fileDelete(anid: string, aid: string, cwd: string, filePath: string, cb: (error?: string) => void) {
     this.fileDeleteCallbacks.set(aid, cb);
     this.send({ type: 'file_delete', anid, aid, cwd, path: filePath });
+  }
+
+  fileDownload(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { base64: string; size: number } | null, error?: string) => void) {
+    this.fileDownloadCallbacks.set(aid, cb);
+    this.send({ type: 'file_download', anid, aid, cwd, path: filePath });
   }
 
   claudeMdRead(anid: string, aid: string, cb: (content: string | null, error?: string) => void) {
