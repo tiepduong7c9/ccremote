@@ -424,6 +424,7 @@ function GitManagerContent({ anid }: { anid: string }) {
       setLoading(false);
       if (err) { setError(err); return; }
       setRepos(r);
+      if (r) setExpanded(prev => new Set([...prev, ...r.map(repo => repo.localPath)]));
     });
   };
 
