@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { nanoid } from 'nanoid';
-import { ChevronRight, ChevronDown, Folder, File, RefreshCw } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, File, RefreshCw, ChevronsUp } from 'lucide-react';
 import { browserSocket } from '../ws';
 import FileModal from './FileModal';
 
@@ -33,8 +33,12 @@ function buildTree(files: string[]): TreeNode {
   return root;
 }
 
-function TreeNodeRow({ node, depth, selectedFile, onOpen }: { node: TreeNode; depth: number; selectedFile: string | null; onOpen: (path: string) => void }) {
+function TreeNodeRow({ node, depth, selectedFile, onOpen, collapseRevision }: { node: TreeNode; depth: number; selectedFile: string | null; onOpen: (path: string) => void; collapseRevision?: number }) {
   const [open, setOpen] = useState(depth < 2);
+
+  useEffect(() => {
+    if (collapseRevision && collapseRevision > 0) setOpen(false);
+  }, [collapseRevision]);
 
   if (node.isDir) {
     return (
@@ -49,7 +53,7 @@ function TreeNodeRow({ node, depth, selectedFile, onOpen }: { node: TreeNode; de
           <span className="font-mono text-xs text-base-content/60 truncate">{node.name}/</span>
         </button>
         {open && Array.from(node.children.values()).map(child => (
-          <TreeNodeRow key={child.fullPath} node={child} depth={depth + 1} selectedFile={selectedFile} onOpen={onOpen} />
+          <TreeNodeRow key={child.fullPath} node={child} depth={depth + 1} selectedFile={selectedFile} onOpen={onOpen} collapseRevision={collapseRevision} />
         ))}
       </>
     );
@@ -74,6 +78,7 @@ export default function FileTreePanel({ anid, cwd }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<string | null>(null);
+  const [collapseRevision, setCollapseRevision] = useState(0);
 
   const load = useCallback(() => {
     if (!cwd) return;
@@ -110,6 +115,14 @@ export default function FileTreePanel({ anid, cwd }: Props) {
           <span className="text-xs text-base-content/40 flex-1">
             {files !== null ? `${files.length} files` : ''}
           </span>
+          <button
+            className="btn btn-xs btn-ghost p-0 w-6 h-6"
+            onClick={() => setCollapseRevision(r => r + 1)}
+            title="Collapse all folders"
+            disabled={!files || files.length === 0}
+          >
+            <ChevronsUp size={12} />
+          </button>
           <button className="btn btn-xs btn-ghost p-0 w-6 h-6" onClick={load} title="Refresh" disabled={loading}>
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
           </button>
@@ -129,7 +142,7 @@ export default function FileTreePanel({ anid, cwd }: Props) {
             <ul className="py-1">
               {Array.from(buildTree(files).children.values()).map(child => (
                 <li key={child.fullPath}>
-                  <TreeNodeRow node={child} depth={0} selectedFile={selectedFile} onOpen={handleOpen} />
+                  <TreeNodeRow node={child} depth={0} selectedFile={selectedFile} onOpen={handleOpen} collapseRevision={collapseRevision} />
                 </li>
               ))}
             </ul>
