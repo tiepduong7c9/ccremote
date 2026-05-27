@@ -41,6 +41,7 @@ class BrowserSocket {
   private fileListCallbacks: Map<string, (files: string[] | null, error?: string) => void> = new Map();
   private fileReadCallbacks: Map<string, (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
   private fileWriteCallbacks: Map<string, (error?: string) => void> = new Map();
+  private fileDeleteCallbacks: Map<string, (error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -170,7 +171,9 @@ class BrowserSocket {
         const fileReadCb = this.fileReadCallbacks.get(msg.aid);
         if (fileReadCb) { fileReadCb(null, msg.message); this.fileReadCallbacks.delete(msg.aid); break; }
         const fileWriteCb = this.fileWriteCallbacks.get(msg.aid);
-        if (fileWriteCb) { fileWriteCb(msg.message); this.fileWriteCallbacks.delete(msg.aid); }
+        if (fileWriteCb) { fileWriteCb(msg.message); this.fileWriteCallbacks.delete(msg.aid); break; }
+        const fileDeleteCb = this.fileDeleteCallbacks.get(msg.aid);
+        if (fileDeleteCb) { fileDeleteCb(msg.message); this.fileDeleteCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -207,6 +210,12 @@ class BrowserSocket {
       case 'file_write_result': {
         const cb = this.fileWriteCallbacks.get(msg.aid);
         if (cb) { cb(); this.fileWriteCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'file_delete_result': {
+        const cb = this.fileDeleteCallbacks.get(msg.aid);
+        if (cb) { cb(); this.fileDeleteCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -357,6 +366,11 @@ class BrowserSocket {
   fileWrite(anid: string, aid: string, cwd: string, filePath: string, content: string, cb: (error?: string) => void) {
     this.fileWriteCallbacks.set(aid, cb);
     this.send({ type: 'file_write', anid, aid, cwd, path: filePath, content });
+  }
+
+  fileDelete(anid: string, aid: string, cwd: string, filePath: string, cb: (error?: string) => void) {
+    this.fileDeleteCallbacks.set(aid, cb);
+    this.send({ type: 'file_delete', anid, aid, cwd, path: filePath });
   }
 }
 
