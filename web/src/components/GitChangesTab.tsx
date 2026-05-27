@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { GitBranch, RefreshCw, List, FolderTree, CloudDownload } from 'lucide-react';
+import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp } from 'lucide-react';
 import { useGitStore } from '../git-store';
 import GitFileList from './GitFileList';
 import GitFileTree from './GitFileTree';
@@ -16,6 +16,7 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
   const status = statusBySid.get(sid);
   const [diffFile, setDiffFile] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [collapseRevision, setCollapseRevision] = useState(0);
 
   useEffect(() => {
     if (cwd) loadStatus(anid, sid, cwd);
@@ -61,6 +62,15 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
           >
             <FolderTree size={12} />
           </button>
+          {viewMode === 'tree' && (
+            <button
+              className="btn btn-xs btn-ghost p-0 w-6 h-6"
+              onClick={() => setCollapseRevision(r => r + 1)}
+              title="Collapse all folders"
+            >
+              <ChevronsUp size={12} />
+            </button>
+          )}
         </div>
 
         {/* Body */}
@@ -94,7 +104,7 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
               {viewMode === 'flat' ? (
                 <GitFileList files={status.files} selectedFile={selectedFile} onOpen={handleOpen} />
               ) : (
-                <GitFileTree files={status.files} selectedFile={selectedFile} onOpen={handleOpen} />
+                <GitFileTree files={status.files} selectedFile={selectedFile} onOpen={handleOpen} collapseRevision={collapseRevision} />
               )}
             </>
           )}

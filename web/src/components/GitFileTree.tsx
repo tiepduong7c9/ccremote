@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, Folder } from 'lucide-react';
 import type { GitFileChange } from '../lib/protocol';
 import GitStatusBadge from './GitStatusBadge';
@@ -7,6 +7,7 @@ interface Props {
   files: GitFileChange[];
   selectedFile: string | null;
   onOpen: (path: string) => void;
+  collapseRevision?: number;
 }
 
 interface TreeNode {
@@ -33,9 +34,13 @@ function buildTree(files: GitFileChange[]): TreeNode {
   return root;
 }
 
-function TreeNodeRow({ node, depth, selectedFile, onOpen }: { node: TreeNode; depth: number; selectedFile: string | null; onOpen: (path: string) => void }) {
+function TreeNodeRow({ node, depth, selectedFile, onOpen, collapseRevision }: { node: TreeNode; depth: number; selectedFile: string | null; onOpen: (path: string) => void; collapseRevision?: number }) {
   const [open, setOpen] = useState(true);
   const isDir = node.children.size > 0 && !node.file;
+
+  useEffect(() => {
+    if (collapseRevision && collapseRevision > 0) setOpen(false);
+  }, [collapseRevision]);
 
   if (isDir) {
     return (
@@ -50,7 +55,7 @@ function TreeNodeRow({ node, depth, selectedFile, onOpen }: { node: TreeNode; de
           <span className="font-mono text-xs text-base-content/60 truncate">{node.name}/</span>
         </button>
         {open && Array.from(node.children.values()).map(child => (
-          <TreeNodeRow key={child.fullPath} node={child} depth={depth + 1} selectedFile={selectedFile} onOpen={onOpen} />
+          <TreeNodeRow key={child.fullPath} node={child} depth={depth + 1} selectedFile={selectedFile} onOpen={onOpen} collapseRevision={collapseRevision} />
         ))}
       </>
     );
@@ -72,13 +77,13 @@ function TreeNodeRow({ node, depth, selectedFile, onOpen }: { node: TreeNode; de
   );
 }
 
-export default function GitFileTree({ files, selectedFile, onOpen }: Props) {
+export default function GitFileTree({ files, selectedFile, onOpen, collapseRevision }: Props) {
   const root = buildTree(files);
   return (
     <ul className="py-1">
       {Array.from(root.children.values()).map(child => (
         <li key={child.fullPath}>
-          <TreeNodeRow node={child} depth={0} selectedFile={selectedFile} onOpen={onOpen} />
+          <TreeNodeRow node={child} depth={0} selectedFile={selectedFile} onOpen={onOpen} collapseRevision={collapseRevision} />
         </li>
       ))}
     </ul>
