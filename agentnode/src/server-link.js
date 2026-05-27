@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const WebSocket = require('ws');
 const { encode, MessageParser } = require('./protocol');
@@ -379,6 +380,31 @@ class ServerLink {
         this._git.deleteFile(cwd, filePath)
           .then(() => this._send({ type: 'file_delete_result', aid, path: filePath }))
           .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'claude_md_read': {
+        const { aid } = msg;
+        const mdPath = path.join(os.homedir(), '.claude', 'CLAUDE.md');
+        try {
+          const content = fs.existsSync(mdPath) ? fs.readFileSync(mdPath, 'utf8') : '';
+          this._send({ type: 'claude_md_read_result', aid, content });
+        } catch (err) {
+          this._send({ type: 'git_result', aid, success: false, message: err.message });
+        }
+        break;
+      }
+
+      case 'claude_md_write': {
+        const { aid, content } = msg;
+        const mdPath = path.join(os.homedir(), '.claude', 'CLAUDE.md');
+        try {
+          fs.mkdirSync(path.dirname(mdPath), { recursive: true });
+          fs.writeFileSync(mdPath, content, 'utf8');
+          this._send({ type: 'claude_md_write_result', aid });
+        } catch (err) {
+          this._send({ type: 'git_result', aid, success: false, message: err.message });
+        }
         break;
       }
 

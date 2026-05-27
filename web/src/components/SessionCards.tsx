@@ -3,7 +3,7 @@ import { useRegistryStore } from '../store';
 import { browserSocket } from '../ws';
 import { nanoid } from 'nanoid';
 import type { AgentnodeView, GitRepo, SessionMeta } from '../lib/protocol';
-import { Plus, X, Server, Copy, Check, Cable, ChevronDown, Settings, GitBranch, FolderGit2, Trash2, ChevronRight } from 'lucide-react';
+import { Plus, X, Server, Copy, Check, Cable, ChevronDown, Settings, GitBranch, FolderGit2, Trash2, ChevronRight, FileText } from 'lucide-react';
 
 // ── Add Node Modal ────────────────────────────────────────────────────────────
 
@@ -271,11 +271,129 @@ function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: (
   );
 }
 
-// ── Git Manager Modal ─────────────────────────────────────────────────────────
+// ── Claude.md Tab ─────────────────────────────────────────────────────────────
 
+function ClaudeMdPanel({ anid }: { anid: string }) {
+  const [content, setContent] = useState('');
+  const [savedContent, setSavedContent] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    let settled = false;
+    const aid = nanoid(8);
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; setLoading(false); setError('No response from agentnode — is the daemon up to date?'); }
+    }, 8000);
+    browserSocket.claudeMdRead(anid, aid, (text, err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      setLoading(false);
+      if (err) { setError(err); return; }
+      const val = text ?? '';
+      setContent(val);
+      setSavedContent(val);
+    });
+    return () => clearTimeout(timer);
+  }, [anid]);
+
+  function handleSave() {
+    setSaving(true);
+    setSaveError(null);
+    browserSocket.claudeMdWrite(anid, nanoid(8), content, (err) => {
+      setSaving(false);
+      if (err) { setSaveError(err); return; }
+      setSavedContent(content);
+    });
+  }
+
+  const dirty = content !== savedContent;
+
+  if (loading) return (
+    <div className="flex justify-center py-8"><span className="loading loading-spinner" /></div>
+  );
+
+  if (error) return (
+    <div className="alert alert-error text-sm py-2"><span>{error}</span></div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-base-content/50 font-mono">~/.claude/CLAUDE.md</p>
+      {saveError && (
+        <div className="alert alert-error py-2 text-sm"><span>{saveError}</span></div>
+      )}
+      <textarea
+        className="textarea textarea-bordered w-full font-mono text-xs resize-none"
+        rows={16}
+        value={content}
+        onChange={e => setContent(e.target.value)}
+        spellCheck={false}
+        placeholder={'# User-scope CLAUDE.md\n\nAdd instructions for Claude Code here...'}
+      />
+      <div className="flex justify-end">
+        <button
+          className="btn btn-sm btn-primary"
+          disabled={!dirty || saving}
+          onClick={handleSave}
+        >
+          {saving ? <><span className="loading loading-spinner loading-xs" /> Saving…</> : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Agentnode Settings Modal ──────────────────────────────────────────────────
+
+type SettingsTab = 'git' | 'claude-md';
 type GitView = 'repos' | 'clone' | 'add-existing' | 'add-worktree';
 
-function GitManagerModal({ anid, nodeName, onClose }: { anid: string; nodeName: string; onClose: () => void }) {
+function AgentnodeSettingsModal({ anid, nodeName, onClose }: { anid: string; nodeName: string; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('git');
+
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box max-w-lg flex flex-col gap-0 p-0 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3">
+          <h3 className="font-bold text-lg flex items-center gap-2">
+            <Settings size={18} /> {nodeName}
+          </h3>
+          <button className="btn btn-sm btn-ghost btn-circle" onClick={onClose}><X size={15} /></button>
+        </div>
+        {/* Tabs */}
+        <div className="flex gap-1 px-5 border-b border-base-300">
+          <button
+            className={`text-sm font-semibold px-3 py-2 border-b-2 transition-colors -mb-px ${activeTab === 'git' ? 'border-primary text-primary' : 'border-transparent text-base-content/50 hover:text-base-content/80'}`}
+            onClick={() => setActiveTab('git')}
+          >
+            <span className="flex items-center gap-1.5"><FolderGit2 size={14} /> Git</span>
+          </button>
+          <button
+            className={`text-sm font-semibold px-3 py-2 border-b-2 transition-colors -mb-px ${activeTab === 'claude-md' ? 'border-primary text-primary' : 'border-transparent text-base-content/50 hover:text-base-content/80'}`}
+            onClick={() => setActiveTab('claude-md')}
+          >
+            <span className="flex items-center gap-1.5"><FileText size={14} /> Claude.md</span>
+          </button>
+        </div>
+        {/* Tab content */}
+        <div className="p-5">
+          {activeTab === 'git' && <GitManagerContent anid={anid} />}
+          {activeTab === 'claude-md' && <ClaudeMdPanel anid={anid} />}
+        </div>
+      </div>
+      <div className="modal-backdrop" onClick={onClose} />
+    </div>
+  );
+}
+
+function GitManagerContent({ anid }: { anid: string }) {
   const [repos, setRepos] = useState<GitRepo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -382,16 +500,7 @@ function GitManagerModal({ anid, nodeName, onClose }: { anid: string; nodeName: 
   const shortPath = (p: string) => p.replace(/^\/home\/[^/]+/, '~');
 
   return (
-    <div className="modal modal-open">
-      <div className="modal-box max-w-lg">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-lg flex items-center gap-2">
-            <FolderGit2 size={18} />
-            Git — {nodeName}
-          </h3>
-          <button className="btn btn-sm btn-ghost btn-circle" onClick={onClose}><X size={15} /></button>
-        </div>
-
+    <div>
         {error && (
           <div className="alert alert-error mb-3 py-2 text-sm">
             <span className="font-mono break-all">{error}</span>
@@ -531,8 +640,6 @@ function GitManagerModal({ anid, nodeName, onClose }: { anid: string; nodeName: 
             </div>
           </form>
         )}
-      </div>
-      <div className="modal-backdrop" onClick={onClose} />
     </div>
   );
 }
@@ -668,7 +775,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
   const [showAdd, setShowAdd] = useState(false);
   const [newSessionAnid, setNewSessionAnid] = useState<string | null>(null);
   const [killTarget, setKillTarget] = useState<{ anid: string; sid: string } | null>(null);
-  const [gitManagerAnid, setGitManagerAnid] = useState<string | null>(null);
+  const [settingsAnid, setSettingsAnid] = useState<string | null>(null);
 
   const handleNew = (anid: string) => {
     setNewSessionAnid(anid);
@@ -720,8 +827,8 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
               <div className="flex-1 h-px bg-base-content/15" />
               <button
                 className="shrink-0 btn btn-xs btn-ghost btn-circle text-base-content/40 hover:text-base-content"
-                onClick={() => setGitManagerAnid(node.id)}
-                title="Manage git repos"
+                onClick={() => setSettingsAnid(node.id)}
+                title="Node settings"
               ><Settings size={12} /></button>
             </div>
 
@@ -763,11 +870,11 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
           onClose={() => setKillTarget(null)}
         />
       )}
-      {gitManagerAnid && (
-        <GitManagerModal
-          anid={gitManagerAnid}
-          nodeName={agentnodes.find(n => n.id === gitManagerAnid)?.name ?? gitManagerAnid}
-          onClose={() => setGitManagerAnid(null)}
+      {settingsAnid && (
+        <AgentnodeSettingsModal
+          anid={settingsAnid}
+          nodeName={agentnodes.find(n => n.id === settingsAnid)?.name ?? settingsAnid}
+          onClose={() => setSettingsAnid(null)}
         />
       )}
     </div>
