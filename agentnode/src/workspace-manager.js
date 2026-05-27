@@ -221,7 +221,7 @@ class WorkspaceManager {
     try { stat = fs.statSync(fullPath); } catch { throw new Error(`File not found: ${filePath}`); }
     if (stat.size > MAX) return { content: '', language, isBinary: false, tooLarge: true };
     const buf = fs.readFileSync(fullPath);
-    if (buf.indexOf(0) !== -1) return { content: '', language, isBinary: true, tooLarge: false };
+    if (buf.indexOf(0) !== -1) return { content: '', language, isBinary: true, tooLarge: false, base64Content: buf.toString('base64') };
     return { content: buf.toString('utf8'), language, isBinary: false, tooLarge: false };
   }
 
@@ -238,6 +238,19 @@ class WorkspaceManager {
     const fullPath = path.resolve(abs, filePath);
     if (!fullPath.startsWith(abs + path.sep) && fullPath !== abs) throw new Error('Path traversal denied');
     fs.rmSync(fullPath, { recursive: true, force: true });
+  }
+
+  async downloadFile(cwd, filePath) {
+    const abs = resolvePath(cwd);
+    const fullPath = path.resolve(abs, filePath);
+    if (!fullPath.startsWith(abs + path.sep) && fullPath !== abs) throw new Error('Path traversal denied');
+    let stat;
+    try { stat = fs.statSync(fullPath); } catch { throw new Error(`File not found: ${filePath}`); }
+    if (stat.isDirectory()) throw new Error('Cannot download a directory');
+    const MAX = 1024 * 1024 * 1024; // 1 GB
+    if (stat.size > MAX) throw new Error('File exceeds 1 GB download limit');
+    const buf = fs.readFileSync(fullPath);
+    return { base64: buf.toString('base64'), size: stat.size };
   }
 
   async fileContents(cwd, filePath) {
