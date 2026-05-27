@@ -374,6 +374,14 @@ class ServerLink {
         break;
       }
 
+      case 'file_delete': {
+        const { aid, cwd, path: filePath } = msg;
+        this._git.deleteFile(cwd, filePath)
+          .then(() => this._send({ type: 'file_delete_result', aid, path: filePath }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
       default:
         break;
     }

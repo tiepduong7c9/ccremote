@@ -233,6 +233,13 @@ class WorkspaceManager {
     fs.writeFileSync(fullPath, content, 'utf8');
   }
 
+  async deleteFile(cwd, filePath) {
+    const abs = resolvePath(cwd);
+    const fullPath = path.resolve(abs, filePath);
+    if (!fullPath.startsWith(abs + path.sep) && fullPath !== abs) throw new Error('Path traversal denied');
+    fs.rmSync(fullPath, { recursive: true, force: true });
+  }
+
   async fileContents(cwd, filePath) {
     const abs = resolvePath(cwd);
     const fullPath = path.join(abs, filePath);
