@@ -219,6 +219,27 @@ class WorkspaceManager {
     }
   }
 
+  async listDir(cwd, subPath = '') {
+    const abs = resolvePath(cwd);
+    const target = subPath ? path.resolve(abs, subPath) : abs;
+    if (target !== abs && !target.startsWith(abs + path.sep)) throw new Error('Invalid path');
+
+    const SKIP = new Set(['.git', 'node_modules', '.next', 'dist', 'build', '.cache', '__pycache__', '.venv', 'venv', 'coverage', '.nyc_output', '.turbo', '.svelte-kit']);
+    let raw;
+    try { raw = fs.readdirSync(target, { withFileTypes: true }); } catch { return { entries: [] }; }
+
+    const entries = [];
+    for (const entry of raw) {
+      if (SKIP.has(entry.name)) continue;
+      entries.push({ name: entry.name, isDir: entry.isDirectory() });
+    }
+    entries.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return { entries };
+  }
+
   async listFiles(cwd) {
     const abs = resolvePath(cwd);
     const SKIP = new Set(['.git', 'node_modules', '.next', 'dist', 'build', '.cache', '__pycache__', '.venv', 'venv', 'coverage', '.nyc_output', '.turbo', '.svelte-kit']);
