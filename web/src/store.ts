@@ -128,12 +128,14 @@ export interface ToastItem {
   id: string;
   title: string;
   body?: string;
-  kind: 'done' | 'waiting';
+  kind: 'done' | 'waiting' | 'progress';
+  percent?: number;
 }
 
 interface ToastState {
   toasts: ToastItem[];
-  addToast: (t: Omit<ToastItem, 'id'>) => void;
+  addToast: (t: Omit<ToastItem, 'id'>) => string;
+  updateToast: (id: string, patch: Partial<Omit<ToastItem, 'id'>>) => void;
   removeToast: (id: string) => void;
 }
 
@@ -142,9 +144,15 @@ export const useToastStore = create<ToastState>((set) => ({
   addToast: (t) => {
     const id = Math.random().toString(36).slice(2, 9);
     set(s => ({ toasts: [...s.toasts, { ...t, id }] }));
-    setTimeout(() => {
-      set(s => ({ toasts: s.toasts.filter(x => x.id !== id) }));
-    }, 5000);
+    if (t.kind !== 'progress') {
+      setTimeout(() => {
+        set(s => ({ toasts: s.toasts.filter(x => x.id !== id) }));
+      }, 5000);
+    }
+    return id;
   },
+  updateToast: (id, patch) => set(s => ({
+    toasts: s.toasts.map(t => t.id === id ? { ...t, ...patch } : t),
+  })),
   removeToast: (id) => set(s => ({ toasts: s.toasts.filter(x => x.id !== id) })),
 }));

@@ -111,16 +111,26 @@ export default function App() {
           {toasts.map(t => (
             <div
               key={t.id}
-              className={`flex items-start gap-2 px-3 py-2 rounded-lg shadow-lg border text-sm pointer-events-auto
+              className={`flex items-start gap-2 px-3 py-2 rounded-lg shadow-lg border text-sm pointer-events-auto min-w-48
                 ${t.kind === 'done'
                   ? 'bg-violet-50 border-violet-200 text-violet-900 dark:bg-violet-950 dark:border-violet-800 dark:text-violet-100'
-                  : 'bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-950 dark:border-yellow-800 dark:text-yellow-100'
+                  : t.kind === 'progress'
+                    ? 'bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950 dark:border-blue-800 dark:text-blue-100'
+                    : 'bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-950 dark:border-yellow-800 dark:text-yellow-100'
                 }`}
             >
-              <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${t.kind === 'done' ? 'bg-violet-500' : 'bg-yellow-400'}`} />
-              <div className="flex flex-col min-w-0">
+              <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${t.kind === 'done' ? 'bg-violet-500' : t.kind === 'progress' ? 'bg-blue-400' : 'bg-yellow-400'}`} />
+              <div className="flex flex-col min-w-0 flex-1">
                 <span className="font-medium leading-tight">{t.title}</span>
                 {t.body && <span className="text-xs opacity-60 leading-tight">{t.body}</span>}
+                {t.kind === 'progress' && (
+                  <div className="mt-1.5 w-full bg-blue-200 dark:bg-blue-800 rounded-full h-1">
+                    <div
+                      className="bg-blue-500 h-1 rounded-full transition-all duration-150"
+                      style={{ width: `${t.percent ?? 0}%` }}
+                    />
+                  </div>
+                )}
               </div>
               <button
                 className="ml-1 opacity-40 hover:opacity-80 text-xs leading-none shrink-0"
