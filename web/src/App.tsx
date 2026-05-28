@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useAuthStore, useRegistryStore } from './store';
+import { useAuthStore, useRegistryStore, useToastStore } from './store';
 import { browserSocket } from './ws';
 import LoginScreen from './components/LoginScreen';
 import SessionCards from './components/SessionCards';
@@ -13,6 +13,7 @@ import { Folder, TerminalSquare, ChevronRight } from 'lucide-react';
 export default function App() {
   const { authed, check } = useAuthStore();
   const { selectedAnid, selectedSid, select, agentnodes } = useRegistryStore();
+  const { toasts, removeToast } = useToastStore();
   const [showFileSearch, setShowFileSearch] = useState(false);
 
   const session = selectedAnid && selectedSid
@@ -104,6 +105,30 @@ export default function App() {
           cwd={fileSearchContextRef.current.cwd}
           onClose={() => setShowFileSearch(false)}
         />
+      )}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50 pointer-events-none">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              className={`flex items-start gap-2 px-3 py-2 rounded-lg shadow-lg border text-sm pointer-events-auto
+                ${t.kind === 'done'
+                  ? 'bg-violet-50 border-violet-200 text-violet-900 dark:bg-violet-950 dark:border-violet-800 dark:text-violet-100'
+                  : 'bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-950 dark:border-yellow-800 dark:text-yellow-100'
+                }`}
+            >
+              <span className={`mt-0.5 w-1.5 h-1.5 rounded-full shrink-0 ${t.kind === 'done' ? 'bg-violet-500' : 'bg-yellow-400'}`} />
+              <div className="flex flex-col min-w-0">
+                <span className="font-medium leading-tight">{t.title}</span>
+                {t.body && <span className="text-xs opacity-60 leading-tight">{t.body}</span>}
+              </div>
+              <button
+                className="ml-1 opacity-40 hover:opacity-80 text-xs leading-none shrink-0"
+                onClick={() => removeToast(t.id)}
+              >✕</button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

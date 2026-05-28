@@ -122,3 +122,29 @@ export const useTerminalStore = create<TerminalState>((set) => ({
     });
   },
 }));
+
+// ── Toasts ────────────────────────────────────────────────────────────────────
+export interface ToastItem {
+  id: string;
+  title: string;
+  body?: string;
+  kind: 'done' | 'waiting';
+}
+
+interface ToastState {
+  toasts: ToastItem[];
+  addToast: (t: Omit<ToastItem, 'id'>) => void;
+  removeToast: (id: string) => void;
+}
+
+export const useToastStore = create<ToastState>((set) => ({
+  toasts: [],
+  addToast: (t) => {
+    const id = Math.random().toString(36).slice(2, 9);
+    set(s => ({ toasts: [...s.toasts, { ...t, id }] }));
+    setTimeout(() => {
+      set(s => ({ toasts: s.toasts.filter(x => x.id !== id) }));
+    }, 5000);
+  },
+  removeToast: (id) => set(s => ({ toasts: s.toasts.filter(x => x.id !== id) })),
+}));
