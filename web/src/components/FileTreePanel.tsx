@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { nanoid } from 'nanoid';
-import { ChevronRight, ChevronDown, Folder, File, RefreshCw, ChevronsUp, Trash2, Download } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, RefreshCw, ChevronsUp, Trash2, Download } from 'lucide-react';
 import { browserSocket } from '../ws';
 import FileModal from './FileModal';
 
@@ -9,107 +9,127 @@ interface Props {
   cwd: string;
 }
 
-interface TreeNode {
+interface DirEntry {
   name: string;
-  fullPath: string;
   isDir: boolean;
-  children: Map<string, TreeNode>;
+  fullPath: string;
 }
+
+// Map from directory fullPath → its children ('loading' while in-flight, undefined = not yet requested)
+type DirCache = Map<string, DirEntry[] | 'loading'>;
 
 interface ContextMenu {
   x: number;
   y: number;
-  node: TreeNode;
+  entry: DirEntry;
 }
 
-function buildTree(files: string[]): TreeNode {
-  const root: TreeNode = { name: '', fullPath: '', isDir: true, children: new Map() };
-  for (const f of files) {
-    const parts = f.split('/');
-    let node = root;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (!node.children.has(part)) {
-        const isDir = i < parts.length - 1;
-        node.children.set(part, { name: part, fullPath: parts.slice(0, i + 1).join('/'), isDir, children: new Map() });
-      }
-      node = node.children.get(part)!;
-    }
-  }
-  return root;
-}
-
-function TreeNodeRow({ node, depth, selectedFile, onOpen, onContextMenu, collapseRevision }: {
-  node: TreeNode;
+function TreeNodeRow({ entry, depth, cache, onExpand, collapseRevision, selectedFile, onOpen, onContextMenu }: {
+  entry: DirEntry;
   depth: number;
+  cache: DirCache;
+  onExpand: (path: string) => void;
+  collapseRevision: number;
   selectedFile: string | null;
   onOpen: (path: string) => void;
-  onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
-  collapseRevision?: number;
+  onContextMenu: (e: React.MouseEvent, entry: DirEntry) => void;
 }) {
-  const [open, setOpen] = useState(depth < 2);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (collapseRevision && collapseRevision > 0) setOpen(false);
+    if (collapseRevision > 0) setOpen(false);
   }, [collapseRevision]);
 
-  if (node.isDir) {
+  // Trigger load when opened and children not yet fetched
+  useEffect(() => {
+    if (open && entry.isDir && cache.get(entry.fullPath) === undefined) {
+      onExpand(entry.fullPath);
+    }
+  }, [open, entry.isDir, entry.fullPath, cache, onExpand]);
+
+  if (entry.isDir) {
+    const children = cache.get(entry.fullPath);
     return (
       <>
         <button
           className="w-full flex items-center gap-1 py-0.5 hover:bg-base-300 text-left min-w-0"
           style={{ paddingLeft: `${8 + depth * 12}px` }}
           onClick={() => setOpen(o => !o)}
-          onContextMenu={e => onContextMenu(e, node)}
+          onContextMenu={e => onContextMenu(e, entry)}
         >
           {open ? <ChevronDown size={12} className="shrink-0 text-base-content/40" /> : <ChevronRight size={12} className="shrink-0 text-base-content/40" />}
-          <Folder size={12} className="shrink-0 text-base-content/40" />
-          <span className="font-mono text-xs text-base-content/60 truncate">{node.name}/</span>
+          <span className="font-mono text-xs text-base-content/60 truncate">{entry.name}/</span>
         </button>
-        {open && Array.from(node.children.values()).map(child => (
-          <TreeNodeRow key={child.fullPath} node={child} depth={depth + 1} selectedFile={selectedFile} onOpen={onOpen} onContextMenu={onContextMenu} collapseRevision={collapseRevision} />
+        {open && children === 'loading' && (
+          <div style={{ paddingLeft: `${8 + (depth + 1) * 12}px` }} className="py-1">
+            <span className="loading loading-spinner loading-xs text-base-content/30" />
+          </div>
+        )}
+        {open && Array.isArray(children) && children.map(child => (
+          <TreeNodeRow
+            key={child.fullPath}
+            entry={child}
+            depth={depth + 1}
+            cache={cache}
+            onExpand={onExpand}
+            collapseRevision={collapseRevision}
+            selectedFile={selectedFile}
+            onOpen={onOpen}
+            onContextMenu={onContextMenu}
+          />
         ))}
       </>
     );
   }
 
-  const isSelected = node.fullPath === selectedFile;
+  const isSelected = entry.fullPath === selectedFile;
   return (
     <button
       className={`w-full flex items-center gap-1.5 py-0.5 text-left min-w-0 group ${isSelected ? 'bg-primary/15 hover:bg-primary/20' : 'hover:bg-base-300'}`}
       style={{ paddingLeft: `${8 + depth * 12}px` }}
-      onClick={() => onOpen(node.fullPath)}
-      onContextMenu={e => onContextMenu(e, node)}
+      onClick={() => onOpen(entry.fullPath)}
+      onContextMenu={e => onContextMenu(e, entry)}
     >
       <File size={11} className="shrink-0 text-base-content/30" />
-      <span className="font-mono text-xs truncate text-base-content/80 group-hover:text-base-content">{node.name}</span>
+      <span className="font-mono text-xs truncate text-base-content/80 group-hover:text-base-content">{entry.name}</span>
     </button>
   );
 }
 
 export default function FileTreePanel({ anid, cwd }: Props) {
-  const [files, setFiles] = useState<string[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [cache, setCache] = useState<DirCache>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [collapseRevision, setCollapseRevision] = useState(0);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<TreeNode | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<DirEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(() => {
-    if (!cwd) return;
-    setLoading(true);
-    setError(null);
+  const loadDir = useCallback((subPath: string) => {
+    setCache(prev => new Map(prev).set(subPath, 'loading'));
     const aid = nanoid();
-    browserSocket.fileList(anid, aid, cwd, (result, err) => {
-      setLoading(false);
-      if (err || !result) { setError(err ?? 'Failed to list files'); return; }
-      setFiles(result);
+    browserSocket.fileDir(anid, aid, cwd, subPath, (entries, err) => {
+      if (err || !entries) {
+        setCache(prev => { const next = new Map(prev); next.delete(subPath); return next; });
+        if (subPath === '') setError(err ?? 'Failed to list files');
+      } else {
+        const mapped: DirEntry[] = entries.map(e => ({
+          name: e.name,
+          isDir: e.isDir,
+          fullPath: subPath ? `${subPath}/${e.name}` : e.name,
+        }));
+        setCache(prev => new Map(prev).set(subPath, mapped));
+      }
     });
   }, [anid, cwd]);
+
+  const load = useCallback(() => {
+    setCache(new Map());
+    setError(null);
+    loadDir('');
+  }, [loadDir]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -127,23 +147,23 @@ export default function FileTreePanel({ anid, cwd }: Props) {
     setOpenFile(path);
   };
 
-  const handleContextMenu = (e: React.MouseEvent, node: TreeNode) => {
+  const handleContextMenu = (e: React.MouseEvent, entry: DirEntry) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, node });
+    setContextMenu({ x: e.clientX, y: e.clientY, entry });
   };
 
-  const handleDownload = (node: TreeNode) => {
+  const handleDownload = (entry: DirEntry) => {
     setContextMenu(null);
     const aid = nanoid();
-    browserSocket.fileDownload(anid, aid, cwd, node.fullPath, (result, err) => {
+    browserSocket.fileDownload(anid, aid, cwd, entry.fullPath, (result, err) => {
       if (err || !result) { setError(err ?? 'Download failed'); return; }
       const bytes = Uint8Array.from(atob(result.base64), c => c.charCodeAt(0));
       const blob = new Blob([bytes]);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = node.name;
+      a.download = entry.name;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -162,7 +182,12 @@ export default function FileTreePanel({ anid, cwd }: Props) {
       if (selectedFile === confirmDelete.fullPath || selectedFile?.startsWith(confirmDelete.fullPath + '/')) {
         setSelectedFile(null);
       }
-      load();
+      // Invalidate the parent directory so it reloads
+      const parentPath = confirmDelete.fullPath.includes('/')
+        ? confirmDelete.fullPath.split('/').slice(0, -1).join('/')
+        : '';
+      setCache(prev => { const next = new Map(prev); next.delete(parentPath); return next; });
+      if (parentPath === '') loadDir('');
     });
   };
 
@@ -174,19 +199,20 @@ export default function FileTreePanel({ anid, cwd }: Props) {
     );
   }
 
+  const rootEntries = cache.get('');
+  const loading = rootEntries === 'loading' || rootEntries === undefined;
+
   return (
     <>
       <div className="flex flex-col flex-1 min-h-0">
         {/* Toolbar */}
         <div className="flex items-center gap-1 px-2 h-8 border-b border-base-300 shrink-0">
-          <span className="text-xs text-base-content/40 flex-1">
-            {files !== null ? `${files.length} files` : ''}
-          </span>
+          <span className="flex-1" />
           <button
             className="btn btn-xs btn-ghost p-0 w-6 h-6"
             onClick={() => setCollapseRevision(r => r + 1)}
             title="Collapse all folders"
-            disabled={!files || files.length === 0}
+            disabled={loading}
           >
             <ChevronsUp size={12} />
           </button>
@@ -205,11 +231,20 @@ export default function FileTreePanel({ anid, cwd }: Props) {
           {!loading && error && (
             <div className="px-3 py-2 text-xs text-error">{error}</div>
           )}
-          {!loading && !error && files !== null && (
+          {!loading && !error && Array.isArray(rootEntries) && (
             <ul className="py-1">
-              {Array.from(buildTree(files).children.values()).map(child => (
-                <li key={child.fullPath}>
-                  <TreeNodeRow node={child} depth={0} selectedFile={selectedFile} onOpen={handleOpen} onContextMenu={handleContextMenu} collapseRevision={collapseRevision} />
+              {rootEntries.map(entry => (
+                <li key={entry.fullPath}>
+                  <TreeNodeRow
+                    entry={entry}
+                    depth={0}
+                    cache={cache}
+                    onExpand={loadDir}
+                    collapseRevision={collapseRevision}
+                    selectedFile={selectedFile}
+                    onOpen={handleOpen}
+                    onContextMenu={handleContextMenu}
+                  />
                 </li>
               ))}
             </ul>
@@ -224,10 +259,10 @@ export default function FileTreePanel({ anid, cwd }: Props) {
           className="fixed z-50 min-w-32 rounded-md border border-base-300 bg-base-100 shadow-lg py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
-          {!contextMenu.node.isDir && (
+          {!contextMenu.entry.isDir && (
             <button
               className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-base-200"
-              onClick={() => handleDownload(contextMenu.node)}
+              onClick={() => handleDownload(contextMenu.entry)}
             >
               <Download size={11} />
               Download file
@@ -235,10 +270,10 @@ export default function FileTreePanel({ anid, cwd }: Props) {
           )}
           <button
             className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-error hover:bg-error/10"
-            onClick={() => { setConfirmDelete(contextMenu.node); setContextMenu(null); }}
+            onClick={() => { setConfirmDelete(contextMenu.entry); setContextMenu(null); }}
           >
             <Trash2 size={11} />
-            Delete {contextMenu.node.isDir ? 'folder' : 'file'}
+            Delete {contextMenu.entry.isDir ? 'folder' : 'file'}
           </button>
         </div>
       )}

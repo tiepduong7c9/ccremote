@@ -57,6 +57,7 @@ export type ServerMsg =
   | { type: 'git_pull_result'; anid: string; aid: string; output: string }
   | { type: 'git_revert_result'; anid: string; aid: string }
   | { type: 'file_list_result'; anid: string; aid: string; files: string[] }
+  | { type: 'file_list_dir_result'; anid: string; aid: string; entries: { name: string; isDir: boolean }[] }
   | { type: 'file_read_result'; anid: string; aid: string; path: string; content: string; language: string; isBinary: boolean; tooLarge: boolean }
   | { type: 'file_write_result'; anid: string; aid: string; path: string }
   | { type: 'file_delete_result'; anid: string; aid: string; path: string }
@@ -66,7 +67,7 @@ export type ServerMsg =
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'file_list' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'claude_md_read' | 'claude_md_write';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'claude_md_read' | 'claude_md_write';
   anid: string;
   aid?: string;
   sid?: string;
@@ -82,4 +83,5 @@ export type BrowserMsg = {
   content?: string;
   parentSid?: string;
   ext?: string;
+  subPath?: string;
 };

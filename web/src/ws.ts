@@ -40,6 +40,7 @@ class BrowserSocket {
   private pullCallbacks: Map<string, (result: { output: string } | null, error?: string) => void> = new Map();
   private revertCallbacks: Map<string, (error?: string) => void> = new Map();
   private fileListCallbacks: Map<string, (files: string[] | null, error?: string) => void> = new Map();
+  private fileDirCallbacks: Map<string, (entries: { name: string; isDir: boolean }[] | null, error?: string) => void> = new Map();
   private fileReadCallbacks: Map<string, (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
   private fileWriteCallbacks: Map<string, (error?: string) => void> = new Map();
   private fileDeleteCallbacks: Map<string, (error?: string) => void> = new Map();
@@ -174,6 +175,8 @@ class BrowserSocket {
         if (revertCb) { revertCb(msg.message); this.revertCallbacks.delete(msg.aid); break; }
         const fileListCb = this.fileListCallbacks.get(msg.aid);
         if (fileListCb) { fileListCb(null, msg.message); this.fileListCallbacks.delete(msg.aid); break; }
+        const fileDirCb = this.fileDirCallbacks.get(msg.aid);
+        if (fileDirCb) { fileDirCb(null, msg.message); this.fileDirCallbacks.delete(msg.aid); break; }
         const fileReadCb = this.fileReadCallbacks.get(msg.aid);
         if (fileReadCb) { fileReadCb(null, msg.message); this.fileReadCallbacks.delete(msg.aid); break; }
         const fileWriteCb = this.fileWriteCallbacks.get(msg.aid);
@@ -214,6 +217,12 @@ class BrowserSocket {
       case 'file_list_result': {
         const cb = this.fileListCallbacks.get(msg.aid);
         if (cb) { cb(msg.files); this.fileListCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'file_list_dir_result': {
+        const cb = this.fileDirCallbacks.get(msg.aid);
+        if (cb) { cb(msg.entries); this.fileDirCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -406,6 +415,11 @@ class BrowserSocket {
   fileList(anid: string, aid: string, cwd: string, cb: (files: string[] | null, error?: string) => void) {
     this.fileListCallbacks.set(aid, cb);
     this.send({ type: 'file_list', anid, aid, cwd });
+  }
+
+  fileDir(anid: string, aid: string, cwd: string, subPath: string, cb: (entries: { name: string; isDir: boolean }[] | null, error?: string) => void) {
+    this.fileDirCallbacks.set(aid, cb);
+    this.send({ type: 'file_list_dir', anid, aid, cwd, subPath });
   }
 
   fileRead(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void) {

@@ -366,6 +366,14 @@ class ServerLink {
         break;
       }
 
+      case 'file_list_dir': {
+        const { aid, cwd, subPath } = msg;
+        this._git.listDir(cwd, subPath)
+          .then(({ entries }) => this._send({ type: 'file_list_dir_result', aid, entries }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
       case 'file_read': {
         const { aid, cwd, path: filePath } = msg;
         this._git.readFile(cwd, filePath)
