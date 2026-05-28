@@ -23,7 +23,7 @@ process.stdin.on('end', () => {
       claudeStatus = 'idle';
       break;
     case 'PreToolUse':
-      claudeStatus = event.tool_name === 'AskUserQuestion' ? 'waiting' : 'working';
+      claudeStatus = ['AskUserQuestion', 'ExitPlanMode'].includes(event.tool_name) ? 'waiting' : 'working';
       break;
     case 'PostToolUse':
       claudeStatus = 'working';
