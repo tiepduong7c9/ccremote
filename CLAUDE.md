@@ -81,7 +81,20 @@ ccremote/
     └── vite.config.ts            Proxies /api and /ws to :8080 in dev
 ```
 
-**State directory**: `~/.ccremote/` — holds `daemon.sock`, `daemon.pid`, `sessions.json`, `config.json`.
+Additional agentnode source files:
+- `agentnode/src/workspace-manager.js` — Git repo + worktree management; persists to `repos.json`
+- `agentnode/src/hook.js` — Claude Code hook handler; reports `claudeStatus` to daemon
+
+Additional web components (not exhaustive):
+- `web/src/git-store.ts` — Zustand store: git status, diff, branches, worktrees
+- `web/src/components/RightPanel.tsx` — Collapsible side panel (Git Changes + Files tabs)
+- `web/src/components/FileTreePanel.tsx` — Lazy-loaded file browser (expands on demand)
+- `web/src/components/FileModal.tsx` — Monaco editor + markdown preview for file editing
+- `web/src/components/FileSearchModal.tsx` — Fuzzy file search (Cmd/Ctrl+P)
+- `web/src/components/GitChangesTab.tsx` — Git status, diff, revert, branch, worktrees
+- `web/src/components/DiffModal.tsx` — Monaco DiffEditor side-by-side comparison
+
+**State directory**: `~/.ccremote/` — holds `daemon.sock`, `daemon.pid`, `sessions.json`, `config.json`, `repos.json`.
 
 ## Architecture
 
@@ -117,6 +130,19 @@ Browser  ──WS──▶  BrowserHub  ──aid routing──▶  AgentnodeHub
 - **[server/browser-hub.js](server/browser-hub.js)** — fan-out to browsers. Maintains `attachments: Map<aid, {ws, anid, sid}>`. Routes relay messages by `aid`; broadcasts lifecycle events to all browsers.
 - **[web/src/ws.ts](web/src/ws.ts)** — singleton `BrowserSocket`. Hot-path: PTY `data` frames call `term.write(atob(data))` directly, bypassing React. All other message types update Zustand.
 - **[web/src/components/Terminal.tsx](web/src/components/Terminal.tsx)** — xterm.js mount. Sends `attach` on mount, `detach` on unmount. Mirrors the double-SIGWINCH redraw trick from the CLI after `attached`.
+- **[agentnode/src/workspace-manager.js](agentnode/src/workspace-manager.js)** — manages git repos and worktrees per agentnode. Persists repo list to `~/.ccremote/repos.json`. Handles git operations (status, diff, pull, revert, log, branches, checkout, clone, worktree add/remove) by spawning `git` subprocesses.
+- **[agentnode/src/hook.js](agentnode/src/hook.js)** — tiny Claude Code hook handler. Reads hook event from stdin (JSON), maps `PreToolUse`/`PostToolUse` → `working` and `Stop` → `idle` (with "asking" detection), writes `claude_status` message to the daemon socket. Installed automatically at session creation as `.claude/settings.local.json` in the session cwd.
+
+### Request-response routing for non-PTY operations
+
+Git and file operations use a request-response pattern layered on top of the existing relay:
+
+1. Browser sends a message (e.g. `git_status`, `file_read`) with a unique `aid`
+2. Server stores `{ ws }` in `BrowserHub._gitRequests.get(aid)`
+3. Server relays to the agentnode; agentnode responds with the same `aid` and a `_result` suffix (e.g. `git_status_result`)
+4. Server routes the response back to the originating browser tab by `aid`
+
+This avoids broadcasting large diffs/file contents to all connected browsers.
 
 ### Session lifecycle & state
 
@@ -125,6 +151,13 @@ Sessions have three states: `running`, `suspended`, `exited`.
 - `suspended` — PTY has exited but session is resumable. Resume uses `--resume <claudeSessionId>` (UUID pinned at creation), falling back to `--continue`.
 - `exited` — Clean exit (code 0); not resumable.
 - Sessions are identified by nanoid(8) ID or an optional user-provided name; `attach/kill/rename` accept ID, name, or unique prefix.
+
+Additional session fields (beyond id/name/state):
+- `claudeStatus` — `'idle'` | `'working'` | `'waiting'`; updated by `hook.js` and broadcast to browsers
+- `parentSid` — set on "bash tab" sessions spawned inside another session; these are transient
+- `transient` — if true, session is not restored on daemon restart (used for bash tabs)
+
+Claude Code hooks are automatically installed at session creation: `SessionManager` writes `.claude/settings.local.json` in the session cwd pointing `hook.js` as a `UserPromptSubmit` + `PostToolUse` + `Stop` hook.
 
 ### Scrollback strategy
 
@@ -135,6 +168,12 @@ See [agentnode/bin/ccremote.js:302-313](agentnode/bin/ccremote.js#L302-L313) and
 ### Protocol
 
 All messages are NDJSON on every transport (Unix socket, agentnode WS, browser WS). Two envelope fields are added for the network layer: `aid` (attachment ID, browser-allocated) and `anid` (agentnode ID, server-assigned). Existing `sid` = session ID.
+
+Beyond the PTY messages (`attach`, `detach`, `input`, `resize`, `data`, `attached`, `session_exit`), the protocol includes:
+
+- **Git**: `git_repo_list/add/remove`, `git_clone`, `git_status`, `git_diff`, `git_pull`, `git_revert`, `git_log`, `git_list_branches`, `git_checkout`, `git_worktree_add/remove` — each has a corresponding `_result` response
+- **Files**: `file_list`, `file_list_dir`, `file_read`, `file_write`, `file_delete`, `file_download`, `file_upload_chunk` — file transfers use chunked messages (`file_download_chunk` with `index`/`total` fields); uploads use 3 MB chunks
+- **Metadata**: `claude_md_read` / `claude_md_write` (reads/writes `.claude/settings.json` in session cwd)
 
 Auth:
 - Agentnode → server: `Authorization: Bearer <token>` on WS upgrade
@@ -150,3 +189,15 @@ Auth:
 
 Cookie signing secret is auto-generated and saved to `server/data/server-config.json`.
 Agentnode registry is persisted to `server/data/agentnodes.json` (both gitignored).
+
+HTTP routes: `GET /api/info` returns `{ serverUrl }` — used by the browser to construct the `ccremote link` command shown in AddAgentnodeModal.
+
+### Frontend state
+
+Three separate Zustand stores plus a git store:
+- `useAuthStore` — login state
+- `useRegistryStore` — agentnode list, selected agentnode/session
+- `useTerminalStore` — per-session xterm instances
+- `useGitStore` ([web/src/git-store.ts](web/src/git-store.ts)) — git status/diff per session, worktree list, branch list
+
+The RightPanel (288 px, collapsible, state persisted to localStorage) renders either the **Changes** tab (git status + diff) or the **Files** tab (file tree browser) depending on the active tab. File editing opens a `FileModal` with Monaco Editor; markdown files show a preview toggle. File search is globally bound to Cmd/Ctrl+P and opens `FileSearchModal`.
