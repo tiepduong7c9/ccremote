@@ -48,6 +48,7 @@ class ServerLink {
       try { this._manager.detach(att.sid, att.listener); } catch (_) {}
     }
     this._attachments.clear();
+    this._git.cleanupUploads();
   }
 
   _connect() {
@@ -86,6 +87,7 @@ class ServerLink {
         try { this._manager.detach(att.sid, att.listener); } catch (_) {}
       }
       this._attachments.clear();
+      this._git.cleanupUploads();
       this._scheduleReconnect();
     });
 
@@ -430,6 +432,18 @@ class ServerLink {
         }).catch(err => {
           this._send({ type: 'file_download_chunk', aid, path: filePath, index: 0, total: 0, error: err.message });
         });
+        break;
+      }
+
+      case 'file_upload_chunk': {
+        const { aid, cwd, path: filePath, index, total, base64 } = msg;
+        try {
+          const done = this._git.uploadFileChunk(cwd, filePath, index, total, base64, aid);
+          if (done) this._send({ type: 'file_upload_result', aid, path: filePath });
+        } catch (err) {
+          this._git.cancelUpload(aid);
+          this._send({ type: 'git_result', aid, success: false, message: err.message });
+        }
         break;
       }
 

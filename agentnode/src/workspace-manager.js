@@ -76,6 +76,7 @@ function parseWorktrees(output) {
 class WorkspaceManager {
   constructor() {
     this._repos = [];
+    this._uploads = new Map(); // aid -> { tmpPath, finalPath, total, received }
     this._load();
   }
 
@@ -325,6 +326,46 @@ class WorkspaceManager {
     const fullPath = path.resolve(abs, filePath);
     if (!fullPath.startsWith(abs + path.sep) && fullPath !== abs) throw new Error('Path traversal denied');
     fs.rmSync(fullPath, { recursive: true, force: true });
+  }
+
+  uploadFileChunk(cwd, filePath, index, total, base64, aid) {
+    const abs = resolvePath(cwd);
+    const fullPath = path.resolve(abs, filePath);
+    if (!fullPath.startsWith(abs + path.sep) && fullPath !== abs) throw new Error('Path traversal denied');
+    const buf = Buffer.from(base64, 'base64');
+    if (index === 0) {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      const tmpPath = fullPath + '.upload-' + aid;
+      fs.writeFileSync(tmpPath, buf);
+      this._uploads.set(aid, { tmpPath, finalPath: fullPath, total, received: 1 });
+    } else {
+      const upload = this._uploads.get(aid);
+      if (!upload) throw new Error('Upload session not found');
+      fs.appendFileSync(upload.tmpPath, buf);
+      upload.received++;
+    }
+    const upload = this._uploads.get(aid);
+    if (upload.received === upload.total) {
+      fs.renameSync(upload.tmpPath, upload.finalPath);
+      this._uploads.delete(aid);
+      return true;
+    }
+    return false;
+  }
+
+  cancelUpload(aid) {
+    const upload = this._uploads.get(aid);
+    if (upload) {
+      try { fs.unlinkSync(upload.tmpPath); } catch (_) {}
+      this._uploads.delete(aid);
+    }
+  }
+
+  cleanupUploads() {
+    for (const [, upload] of this._uploads) {
+      try { fs.unlinkSync(upload.tmpPath); } catch (_) {}
+    }
+    this._uploads.clear();
   }
 
   async downloadFile(cwd, filePath, onChunk) {
