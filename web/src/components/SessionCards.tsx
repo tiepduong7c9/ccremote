@@ -198,14 +198,28 @@ function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: (
   const [cwd, setCwd] = useState('~');
   const [name, setName] = useState('');
   const [repos, setRepos] = useState<GitRepo[] | null>(null);
+  const [view, setView] = useState<'select' | 'create-worktree'>('select');
+  const [wtTarget, setWtTarget] = useState('');
+  const [wtBranch, setWtBranch] = useState('');
+  const [wtCreating, setWtCreating] = useState(false);
+  const [wtError, setWtError] = useState<string | null>(null);
 
   useEffect(() => {
-    browserSocket.gitRepoList(anid, nanoid(8), (r) => { if (r) setRepos(r); });
+    browserSocket.gitRepoList(anid, nanoid(8), (r) => {
+      if (r) {
+        setRepos(r);
+        if (r.length > 0) setWtTarget(r[0].localPath);
+      }
+    });
   }, [anid]);
 
   const worktrees = repos?.flatMap(r => r.worktrees.map(wt => ({ ...wt, repoPath: r.localPath }))) ?? [];
 
   const shortPath = (p: string) => p.replace(/^\/home\/[^/]+/, '~');
+
+  const wtDerivedPath = wtTarget && wtBranch.trim()
+    ? `${wtTarget.slice(0, wtTarget.lastIndexOf('/'))}/${wtBranch.trim()}`
+    : '';
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -213,58 +227,135 @@ function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: (
     onClose();
   };
 
+  const handleCreateWorktree = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wtTarget || !wtBranch.trim()) return;
+    const derivedPath = wtDerivedPath;
+    setWtCreating(true);
+    setWtError(null);
+    browserSocket.gitWorktreeAdd(anid, nanoid(8), wtTarget, '', wtBranch.trim(), true, (r, err) => {
+      setWtCreating(false);
+      if (err) { setWtError(err); return; }
+      if (r) {
+        setRepos(r);
+        if (derivedPath) setCwd(derivedPath);
+      }
+      setView('select');
+      setWtBranch('');
+    });
+  };
+
+  const backToSelect = () => { setView('select'); setWtBranch(''); setWtError(null); };
+
+  const hasRepos = repos !== null && repos.length > 0;
+
   return (
     <div className="modal modal-open">
       <div className="modal-box">
         <h3 className="font-bold text-lg flex items-center gap-2">
           <Plus size={18} /> New Session
         </h3>
-        <form onSubmit={submit}>
-          {repos === null ? (
-            <div className="flex justify-center py-4"><span className="loading loading-spinner loading-sm" /></div>
-          ) : worktrees.length > 0 ? (
-            <div className="form-control mt-4">
-              <label className="label"><span className="label-text">Worktree</span></label>
-              <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
-                {worktrees.map(wt => (
-                  <button
-                    key={wt.path}
-                    type="button"
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${cwd === wt.path ? 'bg-primary text-primary-content' : 'hover:bg-base-200'}`}
-                    onClick={() => setCwd(wt.path)}
-                  >
-                    <GitBranch size={13} className="shrink-0 opacity-60" />
-                    <code className="font-mono flex-1 truncate">{wt.branch ?? '(detached)'}</code>
-                    <span className="font-mono text-xs opacity-60 truncate max-w-[40%]" title={wt.path}>{shortPath(wt.path)}</span>
-                    {wt.isMain && <span className="badge badge-xs badge-ghost shrink-0">main</span>}
-                  </button>
-                ))}
+
+        {view === 'create-worktree' ? (
+          <form onSubmit={handleCreateWorktree}>
+            <button type="button" className="btn btn-xs btn-ghost mt-3 mb-1" onClick={backToSelect}>← Back</button>
+            {wtError && (
+              <div className="alert alert-error py-2 text-sm mb-3">
+                <span className="font-mono break-all">{wtError}</span>
               </div>
-              <div className="divider text-xs text-base-content/40 my-4">or enter path</div>
-              <CwdCombobox value={cwd} onChange={setCwd} />
+            )}
+            {repos && repos.length > 1 ? (
+              <div className="form-control mt-2">
+                <label className="label"><span className="label-text">Repository</span></label>
+                <select className="select select-bordered font-mono text-sm" value={wtTarget} onChange={e => setWtTarget(e.target.value)}>
+                  {repos.map(r => (
+                    <option key={r.localPath} value={r.localPath}>{shortPath(r.localPath)}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="text-xs text-base-content/50 font-mono mt-3 mb-1 truncate" title={wtTarget}>{shortPath(wtTarget)}</p>
+            )}
+            <div className="form-control mt-3">
+              <label className="label"><span className="label-text">Branch name</span></label>
+              <input
+                className="input input-bordered font-mono text-sm"
+                value={wtBranch}
+                onChange={e => setWtBranch(e.target.value)}
+                placeholder="feature-x"
+                autoFocus
+              />
             </div>
-          ) : (
-            <div className="form-control mt-4">
-              <label className="label"><span className="label-text">Working directory</span></label>
-              <CwdCombobox value={cwd} onChange={setCwd} />
+            {wtDerivedPath && (
+              <p className="mt-2 text-xs font-mono text-base-content/50 truncate" title={wtDerivedPath}>→ {shortPath(wtDerivedPath)}</p>
+            )}
+            <div className="modal-action">
+              <button type="button" className="btn btn-ghost" onClick={backToSelect}>Cancel</button>
+              <button type="submit" className="btn btn-primary gap-2" disabled={wtCreating || !wtBranch.trim()}>
+                {wtCreating ? <span className="loading loading-spinner loading-xs" /> : <GitBranch size={14} />} Add Worktree
+              </button>
             </div>
-          )}
-          <div className="form-control mt-3">
-            <label className="label"><span className="label-text">Name <span className="text-base-content/40">(optional)</span></span></label>
-            <input
-              className="input input-bordered"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="auto-generated if empty"
-            />
-          </div>
-          <div className="modal-action">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary gap-2">
-              <Plus size={15} /> Create
-            </button>
-          </div>
-        </form>
+          </form>
+        ) : (
+          <form onSubmit={submit}>
+            {repos === null ? (
+              <div className="flex justify-center py-4"><span className="loading loading-spinner loading-sm" /></div>
+            ) : worktrees.length > 0 ? (
+              <div className="form-control mt-4">
+                <label className="label">
+                  <span className="label-text">Worktree</span>
+                  <button type="button" className="btn btn-xs btn-ghost gap-1" onClick={() => setView('create-worktree')}>
+                    <Plus size={12} /> New worktree
+                  </button>
+                </label>
+                <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                  {worktrees.map(wt => (
+                    <button
+                      key={wt.path}
+                      type="button"
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${cwd === wt.path ? 'bg-primary text-primary-content' : 'hover:bg-base-200'}`}
+                      onClick={() => setCwd(wt.path)}
+                    >
+                      <GitBranch size={13} className="shrink-0 opacity-60" />
+                      <code className="font-mono flex-1 truncate">{wt.branch ?? '(detached)'}</code>
+                      <span className="font-mono text-xs opacity-60 truncate max-w-[40%]" title={wt.path}>{shortPath(wt.path)}</span>
+                      {wt.isMain && <span className="badge badge-xs badge-ghost shrink-0">main</span>}
+                    </button>
+                  ))}
+                </div>
+                <div className="divider text-xs text-base-content/40 my-4">or enter path</div>
+                <CwdCombobox value={cwd} onChange={setCwd} />
+              </div>
+            ) : (
+              <div className="form-control mt-4">
+                <label className="label">
+                  <span className="label-text">Working directory</span>
+                  {hasRepos && (
+                    <button type="button" className="btn btn-xs btn-ghost gap-1" onClick={() => setView('create-worktree')}>
+                      <Plus size={12} /> New worktree
+                    </button>
+                  )}
+                </label>
+                <CwdCombobox value={cwd} onChange={setCwd} />
+              </div>
+            )}
+            <div className="form-control mt-3">
+              <label className="label"><span className="label-text">Name <span className="text-base-content/40">(optional)</span></span></label>
+              <input
+                className="input input-bordered"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="auto-generated if empty"
+              />
+            </div>
+            <div className="modal-action">
+              <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn btn-primary gap-2">
+                <Plus size={15} /> Create
+              </button>
+            </div>
+          </form>
+        )}
       </div>
       <div className="modal-backdrop" onClick={onClose} />
     </div>
