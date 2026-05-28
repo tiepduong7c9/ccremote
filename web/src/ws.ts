@@ -44,7 +44,9 @@ class BrowserSocket {
   private fileReadCallbacks: Map<string, (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
   private fileWriteCallbacks: Map<string, (error?: string) => void> = new Map();
   private fileDeleteCallbacks: Map<string, (error?: string) => void> = new Map();
-  private fileDownloadCallbacks: Map<string, (result: { base64: string; size: number } | null, error?: string) => void> = new Map();
+  private fileDownloadCallbacks: Map<string, (result: { chunks: string[]; size: number } | null, error?: string) => void> = new Map();
+  private fileDownloadProgressCallbacks: Map<string, (percent: number) => void> = new Map();
+  private fileDownloadChunks: Map<string, { chunks: string[]; received: number; total: number; size: number }> = new Map();
   private claudeMdReadCallbacks: Map<string, (content: string | null, error?: string) => void> = new Map();
   private claudeMdWriteCallbacks: Map<string, (error?: string) => void> = new Map();
   private gitBranchesCallbacks: Map<string, (branches: string[] | null, error?: string) => void> = new Map();
@@ -259,11 +261,30 @@ class BrowserSocket {
         break;
       }
 
-      case 'file_download_result': {
+      case 'file_download_chunk': {
         const cb = this.fileDownloadCallbacks.get(msg.aid);
-        if (cb) {
-          if (msg.error) { cb(null, msg.error); } else { cb({ base64: msg.base64!, size: msg.size! }); }
+        if (!cb) break;
+        if (msg.total === 0 || msg.error) {
           this.fileDownloadCallbacks.delete(msg.aid);
+          this.fileDownloadProgressCallbacks.delete(msg.aid);
+          this.fileDownloadChunks.delete(msg.aid);
+          cb(null, msg.error || 'Download failed');
+          break;
+        }
+        let state = this.fileDownloadChunks.get(msg.aid);
+        if (!state) {
+          state = { chunks: new Array(msg.total), received: 0, total: msg.total, size: msg.size! };
+          this.fileDownloadChunks.set(msg.aid, state);
+        }
+        state.chunks[msg.index] = msg.base64!;
+        state.received++;
+        const progressCb = this.fileDownloadProgressCallbacks.get(msg.aid);
+        if (progressCb) progressCb(Math.round((state.received / state.total) * 100));
+        if (state.received === state.total) {
+          this.fileDownloadCallbacks.delete(msg.aid);
+          this.fileDownloadProgressCallbacks.delete(msg.aid);
+          this.fileDownloadChunks.delete(msg.aid);
+          cb({ chunks: state.chunks, size: state.size });
         }
         break;
       }
@@ -323,7 +344,7 @@ class BrowserSocket {
           const fileDeleteCb = this.fileDeleteCallbacks.get(errAid);
           if (fileDeleteCb) { fileDeleteCb(msg.message); this.fileDeleteCallbacks.delete(errAid); }
           const fileDownloadCb = this.fileDownloadCallbacks.get(errAid);
-          if (fileDownloadCb) { fileDownloadCb(null, msg.message); this.fileDownloadCallbacks.delete(errAid); }
+          if (fileDownloadCb) { fileDownloadCb(null, msg.message); this.fileDownloadCallbacks.delete(errAid); this.fileDownloadProgressCallbacks.delete(errAid); this.fileDownloadChunks.delete(errAid); }
           const claudeMdReadCb = this.claudeMdReadCallbacks.get(errAid);
           if (claudeMdReadCb) { claudeMdReadCb(null, msg.message); this.claudeMdReadCallbacks.delete(errAid); }
           const claudeMdWriteCb = this.claudeMdWriteCallbacks.get(errAid);
@@ -508,8 +529,9 @@ class BrowserSocket {
     this.send({ type: 'file_delete', anid, aid, cwd, path: filePath });
   }
 
-  fileDownload(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { base64: string; size: number } | null, error?: string) => void) {
+  fileDownload(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { chunks: string[]; size: number } | null, error?: string) => void, onProgress?: (percent: number) => void) {
     this.fileDownloadCallbacks.set(aid, cb);
+    if (onProgress) this.fileDownloadProgressCallbacks.set(aid, onProgress);
     this.send({ type: 'file_download', anid, aid, cwd, path: filePath });
   }
 

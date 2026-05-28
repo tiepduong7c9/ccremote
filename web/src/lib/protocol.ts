@@ -72,7 +72,7 @@ export type ServerMsg =
   | { type: 'file_read_result'; anid: string; aid: string; path: string; content: string; language: string; isBinary: boolean; tooLarge: boolean }
   | { type: 'file_write_result'; anid: string; aid: string; path: string }
   | { type: 'file_delete_result'; anid: string; aid: string; path: string }
-  | { type: 'file_download_result'; anid: string; aid: string; path: string; base64?: string; size?: number; error?: string }
+  | { type: 'file_download_chunk'; anid: string; aid: string; path: string; index: number; total: number; base64?: string; size?: number; error?: string }
   | { type: 'claude_md_read_result'; anid: string; aid: string; content: string }
   | { type: 'claude_md_write_result'; anid: string; aid: string }
   | { type: 'server_error'; anid?: string; aid?: string; message: string };

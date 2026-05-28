@@ -327,7 +327,7 @@ class WorkspaceManager {
     fs.rmSync(fullPath, { recursive: true, force: true });
   }
 
-  async downloadFile(cwd, filePath) {
+  async downloadFile(cwd, filePath, onChunk) {
     const abs = resolvePath(cwd);
     const fullPath = path.resolve(abs, filePath);
     if (!fullPath.startsWith(abs + path.sep) && fullPath !== abs) throw new Error('Path traversal denied');
@@ -336,8 +336,20 @@ class WorkspaceManager {
     if (stat.isDirectory()) throw new Error('Cannot download a directory');
     const MAX = 1024 * 1024 * 1024; // 1 GB
     if (stat.size > MAX) throw new Error('File exceeds 1 GB download limit');
-    const buf = fs.readFileSync(fullPath);
-    return { base64: buf.toString('base64'), size: stat.size };
+    // 3 MB per chunk — multiple of 3 so every chunk except the last has no base64 padding
+    const CHUNK = 3 * 1024 * 1024;
+    const total = Math.max(1, Math.ceil(stat.size / CHUNK));
+    const fd = fs.openSync(fullPath, 'r');
+    try {
+      for (let i = 0; i < total; i++) {
+        const len = Math.min(CHUNK, stat.size - i * CHUNK);
+        const buf = Buffer.alloc(len);
+        fs.readSync(fd, buf, 0, len, i * CHUNK);
+        await onChunk(i, total, buf.toString('base64'), stat.size);
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
   }
 
   async fileContents(cwd, filePath) {

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { nanoid } from 'nanoid';
 import { ChevronRight, ChevronDown, File, RefreshCw, ChevronsUp, Trash2, Download } from 'lucide-react';
 import { browserSocket } from '../ws';
+import { useToastStore } from '../store';
 import FileModal from './FileModal';
 
 interface Props {
@@ -156,10 +157,16 @@ export default function FileTreePanel({ anid, cwd }: Props) {
   const handleDownload = (entry: DirEntry) => {
     setContextMenu(null);
     const aid = nanoid();
+    const { addToast, updateToast, removeToast } = useToastStore.getState();
+    const toastId = addToast({ title: `Downloading ${entry.name}`, kind: 'progress', percent: 0 });
     browserSocket.fileDownload(anid, aid, cwd, entry.fullPath, (result, err) => {
-      if (err || !result) { setError(err ?? 'Download failed'); return; }
-      const bytes = Uint8Array.from(atob(result.base64), c => c.charCodeAt(0));
-      const blob = new Blob([bytes]);
+      if (err || !result) {
+        removeToast(toastId);
+        setError(err ?? 'Download failed');
+        return;
+      }
+      const blobParts = result.chunks.map(chunk => Uint8Array.from(atob(chunk), c => c.charCodeAt(0)));
+      const blob = new Blob(blobParts);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -168,6 +175,10 @@ export default function FileTreePanel({ anid, cwd }: Props) {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 100);
+      updateToast(toastId, { kind: 'done', title: `Downloaded ${entry.name}`, percent: undefined });
+      setTimeout(() => removeToast(toastId), 3000);
+    }, (percent) => {
+      updateToast(toastId, { percent });
     });
   };
 
