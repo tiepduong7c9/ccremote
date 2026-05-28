@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp } from 'lucide-react';
+import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp, RotateCcw } from 'lucide-react';
 import { useGitStore } from '../git-store';
+import type { GitFileChange } from '../lib/protocol';
 import GitFileList from './GitFileList';
 import GitFileTree from './GitFileTree';
 import DiffModal from './DiffModal';
@@ -11,12 +12,22 @@ interface Props {
   cwd: string;
 }
 
+interface ConfirmRevert {
+  path: string;
+  isFolder: boolean;
+  scopedFiles: GitFileChange[];
+}
+
 export default function GitChangesTab({ anid, sid, cwd }: Props) {
-  const { statusBySid, viewMode, setViewMode, loadStatus, pull } = useGitStore();
+  const { statusBySid, viewMode, setViewMode, loadStatus, pull, revertFiles } = useGitStore();
   const status = statusBySid.get(sid);
   const [diffFile, setDiffFile] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [collapseRevision, setCollapseRevision] = useState(0);
+  const [confirmRevert, setConfirmRevert] = useState<ConfirmRevert | null>(null);
+  const [includeUntracked, setIncludeUntracked] = useState(false);
+  const [reverting, setReverting] = useState(false);
+  const [revertError, setRevertError] = useState<string | null>(null);
 
   useEffect(() => {
     if (cwd) loadStatus(anid, sid, cwd);
@@ -29,6 +40,43 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
     setSelectedFile(p);
     setDiffFile(p);
   };
+
+  const handleRevert = (path: string, isFolder: boolean) => {
+    if (!status) return;
+    let scopedFiles: GitFileChange[];
+    if (isFolder) {
+      const prefix = path + '/';
+      scopedFiles = status.files.filter(f => f.path.startsWith(prefix));
+    } else {
+      scopedFiles = status.files.filter(f => f.path === path);
+    }
+    setIncludeUntracked(false);
+    setRevertError(null);
+    setConfirmRevert({ path, isFolder, scopedFiles });
+  };
+
+  const handleRevertConfirm = async () => {
+    if (!confirmRevert) return;
+    setReverting(true);
+    setRevertError(null);
+    try {
+      await revertFiles(anid, sid, cwd, [confirmRevert.path], includeUntracked);
+      setConfirmRevert(null);
+      if (selectedFile) {
+        const prefix = confirmRevert.isFolder ? confirmRevert.path + '/' : null;
+        if (selectedFile === confirmRevert.path || (prefix && selectedFile.startsWith(prefix))) {
+          setSelectedFile(null);
+        }
+      }
+    } catch (e: unknown) {
+      setRevertError(e instanceof Error ? e.message : 'Revert failed');
+    } finally {
+      setReverting(false);
+    }
+  };
+
+  const trackedCount = confirmRevert ? confirmRevert.scopedFiles.filter(f => !f.untracked).length : 0;
+  const untrackedCount = confirmRevert ? confirmRevert.scopedFiles.filter(f => f.untracked).length : 0;
 
   return (
     <>
@@ -102,9 +150,9 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
           {status && !status.loading && !status.error && status.files.length > 0 && (
             <>
               {viewMode === 'flat' ? (
-                <GitFileList files={status.files} selectedFile={selectedFile} onOpen={handleOpen} />
+                <GitFileList files={status.files} selectedFile={selectedFile} onOpen={handleOpen} onRevert={handleRevert} />
               ) : (
-                <GitFileTree files={status.files} selectedFile={selectedFile} onOpen={handleOpen} collapseRevision={collapseRevision} />
+                <GitFileTree files={status.files} selectedFile={selectedFile} onOpen={handleOpen} onRevert={handleRevert} collapseRevision={collapseRevision} />
               )}
             </>
           )}
@@ -139,6 +187,66 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
           filePath={diffFile}
           onClose={() => setDiffFile(null)}
         />
+      )}
+
+      {/* Revert confirmation dialog */}
+      {confirmRevert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-base-100 rounded-lg shadow-xl border border-base-300 p-5 w-96 max-w-full">
+            <div className="flex items-center gap-2 mb-3">
+              <RotateCcw size={15} className="text-warning shrink-0" />
+              <h3 className="font-semibold text-sm">
+                Revert {confirmRevert.isFolder ? 'folder' : 'file'}?
+              </h3>
+            </div>
+            <p className="text-xs text-base-content/70 mb-1 break-all font-mono">
+              {confirmRevert.path}{confirmRevert.isFolder ? '/' : ''}
+            </p>
+            {trackedCount > 0 && (
+              <p className="text-xs text-base-content/60 mb-3">
+                {trackedCount} tracked file{trackedCount !== 1 ? 's' : ''} will be restored to the last commit. This cannot be undone.
+              </p>
+            )}
+            {untrackedCount > 0 && (
+              <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-xs checkbox-warning"
+                  checked={includeUntracked}
+                  onChange={e => setIncludeUntracked(e.target.checked)}
+                  disabled={reverting}
+                />
+                <span className="text-xs text-base-content/70">
+                  Also remove {untrackedCount} untracked file{untrackedCount !== 1 ? 's' : ''}
+                </span>
+              </label>
+            )}
+            {untrackedCount > 0 && trackedCount === 0 && (
+              <p className="text-xs text-base-content/60 mb-3">
+                {untrackedCount} untracked file{untrackedCount !== 1 ? 's' : ''} will be permanently deleted.
+              </p>
+            )}
+            {revertError && (
+              <p className="text-xs text-error mb-3">{revertError}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn btn-xs btn-ghost"
+                onClick={() => setConfirmRevert(null)}
+                disabled={reverting}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-xs btn-warning"
+                onClick={handleRevertConfirm}
+                disabled={reverting || (trackedCount === 0 && !includeUntracked)}
+              >
+                {reverting ? <span className="loading loading-spinner loading-xs" /> : 'Revert'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

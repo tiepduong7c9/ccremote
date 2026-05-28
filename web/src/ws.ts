@@ -38,6 +38,7 @@ class BrowserSocket {
   private statusCallbacks: Map<string, (result: { branch: string; files: GitFileChange[] } | null, error?: string) => void> = new Map();
   private diffCallbacks: Map<string, (result: { oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
   private pullCallbacks: Map<string, (result: { output: string } | null, error?: string) => void> = new Map();
+  private revertCallbacks: Map<string, (error?: string) => void> = new Map();
   private fileListCallbacks: Map<string, (files: string[] | null, error?: string) => void> = new Map();
   private fileReadCallbacks: Map<string, (result: { content: string; language: string; isBinary: boolean; tooLarge: boolean } | null, error?: string) => void> = new Map();
   private fileWriteCallbacks: Map<string, (error?: string) => void> = new Map();
@@ -169,6 +170,8 @@ class BrowserSocket {
         if (diffCb) { diffCb(null, msg.message); this.diffCallbacks.delete(msg.aid); break; }
         const pullCb = this.pullCallbacks.get(msg.aid);
         if (pullCb) { pullCb(null, msg.message); this.pullCallbacks.delete(msg.aid); break; }
+        const revertCb = this.revertCallbacks.get(msg.aid);
+        if (revertCb) { revertCb(msg.message); this.revertCallbacks.delete(msg.aid); break; }
         const fileListCb = this.fileListCallbacks.get(msg.aid);
         if (fileListCb) { fileListCb(null, msg.message); this.fileListCallbacks.delete(msg.aid); break; }
         const fileReadCb = this.fileReadCallbacks.get(msg.aid);
@@ -199,6 +202,12 @@ class BrowserSocket {
       case 'git_pull_result': {
         const cb = this.pullCallbacks.get(msg.aid);
         if (cb) { cb({ output: msg.output }); this.pullCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_revert_result': {
+        const cb = this.revertCallbacks.get(msg.aid);
+        if (cb) { cb(); this.revertCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -387,6 +396,11 @@ class BrowserSocket {
   gitPull(anid: string, aid: string, cwd: string, cb: (result: { output: string } | null, error?: string) => void) {
     this.pullCallbacks.set(aid, cb);
     this.send({ type: 'git_pull', anid, aid, cwd });
+  }
+
+  gitRevert(anid: string, aid: string, cwd: string, paths: string[], includeUntracked: boolean, cb: (error?: string) => void) {
+    this.revertCallbacks.set(aid, cb);
+    this.send({ type: 'git_revert', anid, aid, cwd, paths, includeUntracked });
   }
 
   fileList(anid: string, aid: string, cwd: string, cb: (files: string[] | null, error?: string) => void) {

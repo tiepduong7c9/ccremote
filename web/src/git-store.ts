@@ -29,6 +29,7 @@ interface GitState {
   loadStatus: (anid: string, sid: string, cwd: string) => void;
   pull: (anid: string, sid: string, cwd: string) => void;
   fetchDiff: (anid: string, cwd: string, filePath: string) => Promise<GitDiffResult>;
+  revertFiles: (anid: string, sid: string, cwd: string, paths: string[], includeUntracked: boolean) => Promise<void>;
   clearForSession: (sid: string) => void;
 }
 
@@ -106,6 +107,19 @@ export const useGitStore = create<GitState>((set, get) => ({
       browserSocket.gitDiff(anid, aid, cwd, filePath, (result, error) => {
         if (error || !result) reject(new Error(error ?? 'Unknown error'));
         else resolve(result);
+      });
+    });
+  },
+
+  revertFiles: (anid, sid, cwd, paths, includeUntracked) => {
+    return new Promise<void>((resolve, reject) => {
+      const aid = nanoid();
+      browserSocket.gitRevert(anid, aid, cwd, paths, includeUntracked, (error) => {
+        if (error) reject(new Error(error));
+        else {
+          get().loadStatus(anid, sid, cwd);
+          resolve();
+        }
       });
     });
   },
