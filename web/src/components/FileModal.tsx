@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, AlertCircle, BinaryIcon, FileWarning, Save, Check } from 'lucide-react';
+import { X, AlertCircle, BinaryIcon, FileWarning, Save, Check, Eye, Code, ZoomIn, ZoomOut } from 'lucide-react';
 import { Editor, type OnMount } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import { nanoid } from 'nanoid';
 import { browserSocket } from '../ws';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Props {
   anid: string;
@@ -20,6 +22,7 @@ const HEADER_H = 40;
 
 export default function FileModal({ anid, cwd, filePath, onClose }: Props) {
   const [content, setContent] = useState<string | null>(null);
+  const [liveContent, setLiveContent] = useState('');
   const [language, setLanguage] = useState('plaintext');
   const [isBinary, setIsBinary] = useState(false);
   const [tooLarge, setTooLarge] = useState(false);
@@ -29,7 +32,14 @@ export default function FileModal({ anid, cwd, filePath, onClose }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [theme, setTheme] = useState(getMonacoTheme);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [previewFontSize, setPreviewFontSize] = useState(() => {
+    const saved = localStorage.getItem('md-preview-font-size');
+    return saved ? parseInt(saved, 10) : 15;
+  });
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+
+  const isMarkdown = filePath.toLowerCase().endsWith('.md');
 
   useEffect(() => {
     setLoading(true);
@@ -44,6 +54,7 @@ export default function FileModal({ anid, cwd, filePath, onClose }: Props) {
       setIsBinary(result.isBinary);
       setTooLarge(result.tooLarge);
       setContent(result.content);
+      setLiveContent(result.content);
       setLanguage(result.language);
     });
   }, [anid, cwd, filePath]);
@@ -78,6 +89,10 @@ export default function FileModal({ anid, cwd, filePath, onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, anid, cwd, filePath]);
 
+  useEffect(() => {
+    if (!previewMode) setTimeout(() => editorRef.current?.layout(), 10);
+  }, [previewMode]);
+
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor;
   };
@@ -101,7 +116,34 @@ export default function FileModal({ anid, cwd, filePath, onClose }: Props) {
             {saved && (
               <span className="flex items-center gap-1 text-xs text-success"><Check size={12} />Saved</span>
             )}
-            {ready && (
+            {ready && isMarkdown && previewMode && (
+              <div className="flex items-center gap-0.5">
+                <button
+                  className="btn btn-xs btn-ghost px-1"
+                  onClick={() => setPreviewFontSize(s => { const v = Math.max(11, s - 1); localStorage.setItem('md-preview-font-size', String(v)); return v; })}
+                  title="Decrease font size"
+                  disabled={previewFontSize <= 11}
+                ><ZoomOut size={13} /></button>
+                <span className="text-xs tabular-nums w-7 text-center">{previewFontSize}px</span>
+                <button
+                  className="btn btn-xs btn-ghost px-1"
+                  onClick={() => setPreviewFontSize(s => { const v = Math.min(24, s + 1); localStorage.setItem('md-preview-font-size', String(v)); return v; })}
+                  title="Increase font size"
+                  disabled={previewFontSize >= 24}
+                ><ZoomIn size={13} /></button>
+              </div>
+            )}
+            {ready && isMarkdown && (
+              <button
+                className="btn btn-xs btn-ghost gap-1"
+                onClick={() => setPreviewMode(p => !p)}
+                title={previewMode ? 'Switch to editor' : 'Preview rendered markdown'}
+              >
+                {previewMode ? <Code size={12} /> : <Eye size={12} />}
+                {previewMode ? 'Edit' : 'Preview'}
+              </button>
+            )}
+            {ready && !previewMode && (
               <button
                 className="btn btn-xs btn-ghost gap-1"
                 onClick={doSave}
@@ -140,23 +182,35 @@ export default function FileModal({ anid, cwd, filePath, onClose }: Props) {
             </div>
           )}
           {ready && (
-            <Editor
-              height="100%"
-              width="100%"
-              language={language}
-              value={content}
-              theme={theme}
-              onMount={handleEditorMount}
-              options={{
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                fontSize: 13,
-                lineHeight: 20,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                wordWrap: 'off',
-                scrollbar: { vertical: 'auto', horizontal: 'auto' },
-              }}
-            />
+            <>
+              <div className={`absolute inset-0 ${previewMode ? 'invisible pointer-events-none' : ''}`}>
+                <Editor
+                  height="100%"
+                  width="100%"
+                  language={language}
+                  value={content}
+                  theme={theme}
+                  onMount={handleEditorMount}
+                  onChange={(value) => setLiveContent(value ?? '')}
+                  options={{
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 13,
+                    lineHeight: 20,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    wordWrap: 'off',
+                    scrollbar: { vertical: 'auto', horizontal: 'auto' },
+                  }}
+                />
+              </div>
+              {previewMode && (
+                <div className="absolute inset-0 overflow-auto bg-white">
+                  <div className="md-preview" style={{ fontSize: previewFontSize }}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{liveContent}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
