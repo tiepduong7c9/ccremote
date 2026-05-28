@@ -350,6 +350,14 @@ class ServerLink {
         break;
       }
 
+      case 'git_revert': {
+        const { aid, cwd, paths, includeUntracked } = msg;
+        this._git.revertFiles(cwd, paths, includeUntracked)
+          .then(() => this._send({ type: 'git_revert_result', aid }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
       case 'file_list': {
         const { aid, cwd } = msg;
         this._git.listFiles(cwd)

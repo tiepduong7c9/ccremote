@@ -184,6 +184,41 @@ class WorkspaceManager {
     return { branch, files };
   }
 
+  async revertFiles(cwd, paths, includeUntracked) {
+    const abs = resolvePath(cwd);
+    const { files } = await this.status(cwd);
+    const fileMap = new Map(files.map(f => [f.path, f]));
+
+    const resolved = [];
+    for (const p of paths) {
+      if (fileMap.has(p)) {
+        resolved.push(fileMap.get(p));
+      } else {
+        const prefix = p + '/';
+        for (const f of files) {
+          if (f.path.startsWith(prefix)) resolved.push(f);
+        }
+      }
+    }
+
+    if (resolved.length === 0) return;
+
+    const addedStaged = resolved.filter(f => f.indexStatus === 'A' && !f.untracked);
+    const trackedModified = resolved.filter(f => !f.untracked && f.indexStatus !== 'A');
+    const untracked = resolved.filter(f => f.untracked);
+
+    if (addedStaged.length > 0) {
+      await run(['reset', 'HEAD', '--', ...addedStaged.map(f => f.path)], abs);
+    }
+    if (trackedModified.length > 0) {
+      await run(['checkout', 'HEAD', '--', ...trackedModified.map(f => f.path)], abs);
+    }
+    const toClean = [...addedStaged, ...(includeUntracked ? untracked : [])];
+    if (toClean.length > 0) {
+      await run(['clean', '-fd', '--', ...toClean.map(f => f.path)], abs);
+    }
+  }
+
   async listFiles(cwd) {
     const abs = resolvePath(cwd);
     const SKIP = new Set(['.git', 'node_modules', '.next', 'dist', 'build', '.cache', '__pycache__', '.venv', 'venv', 'coverage', '.nyc_output', '.turbo', '.svelte-kit']);
