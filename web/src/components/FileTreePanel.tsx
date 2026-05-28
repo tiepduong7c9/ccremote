@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { nanoid } from 'nanoid';
-import { ChevronRight, ChevronDown, Folder, File, RefreshCw, ChevronsUp, Trash2, Download } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, RefreshCw, ChevronsUp, Trash2, Download } from 'lucide-react';
 import { browserSocket } from '../ws';
 import FileModal from './FileModal';
 
@@ -58,7 +58,6 @@ function TreeNodeRow({ entry, depth, cache, onExpand, collapseRevision, selected
           onContextMenu={e => onContextMenu(e, entry)}
         >
           {open ? <ChevronDown size={12} className="shrink-0 text-base-content/40" /> : <ChevronRight size={12} className="shrink-0 text-base-content/40" />}
-          <Folder size={12} className="shrink-0 text-base-content/40" />
           <span className="font-mono text-xs text-base-content/60 truncate">{entry.name}/</span>
         </button>
         {open && children === 'loading' && (
