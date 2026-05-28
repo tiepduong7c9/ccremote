@@ -325,6 +325,22 @@ class ServerLink {
         break;
       }
 
+      case 'git_list_branches': {
+        const { aid, cwd } = msg;
+        this._git.listBranches(cwd)
+          .then(({ branches }) => this._send({ type: 'git_branches_result', aid, branches }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
+      case 'git_checkout': {
+        const { aid, cwd, branch } = msg;
+        this._git.checkout(cwd, branch)
+          .then(() => this._send({ type: 'git_checkout_result', aid }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
       case 'git_status': {
         const { aid, cwd } = msg;
         this._git.status(cwd)

@@ -47,6 +47,8 @@ class BrowserSocket {
   private fileDownloadCallbacks: Map<string, (result: { base64: string; size: number } | null, error?: string) => void> = new Map();
   private claudeMdReadCallbacks: Map<string, (content: string | null, error?: string) => void> = new Map();
   private claudeMdWriteCallbacks: Map<string, (error?: string) => void> = new Map();
+  private gitBranchesCallbacks: Map<string, (branches: string[] | null, error?: string) => void> = new Map();
+  private gitCheckoutCallbacks: Map<string, (error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -173,6 +175,10 @@ class BrowserSocket {
         if (pullCb) { pullCb(null, msg.message); this.pullCallbacks.delete(msg.aid); break; }
         const revertCb = this.revertCallbacks.get(msg.aid);
         if (revertCb) { revertCb(msg.message); this.revertCallbacks.delete(msg.aid); break; }
+        const gitBranchesCb = this.gitBranchesCallbacks.get(msg.aid);
+        if (gitBranchesCb) { gitBranchesCb(null, msg.message); this.gitBranchesCallbacks.delete(msg.aid); break; }
+        const gitCheckoutCb = this.gitCheckoutCallbacks.get(msg.aid);
+        if (gitCheckoutCb) { gitCheckoutCb(msg.message); this.gitCheckoutCallbacks.delete(msg.aid); break; }
         const fileListCb = this.fileListCallbacks.get(msg.aid);
         if (fileListCb) { fileListCb(null, msg.message); this.fileListCallbacks.delete(msg.aid); break; }
         const fileDirCb = this.fileDirCallbacks.get(msg.aid);
@@ -211,6 +217,18 @@ class BrowserSocket {
       case 'git_revert_result': {
         const cb = this.revertCallbacks.get(msg.aid);
         if (cb) { cb(); this.revertCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_branches_result': {
+        const cb = this.gitBranchesCallbacks.get(msg.aid);
+        if (cb) { cb(msg.branches); this.gitBranchesCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_checkout_result': {
+        const cb = this.gitCheckoutCallbacks.get(msg.aid);
+        if (cb) { cb(); this.gitCheckoutCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -279,6 +297,10 @@ class BrowserSocket {
           if (pullCb) { pullCb(null, msg.message); this.pullCallbacks.delete(errAid); }
           const revertCb = this.revertCallbacks.get(errAid);
           if (revertCb) { revertCb(msg.message); this.revertCallbacks.delete(errAid); }
+          const gitBranchesCb = this.gitBranchesCallbacks.get(errAid);
+          if (gitBranchesCb) { gitBranchesCb(null, msg.message); this.gitBranchesCallbacks.delete(errAid); }
+          const gitCheckoutCb = this.gitCheckoutCallbacks.get(errAid);
+          if (gitCheckoutCb) { gitCheckoutCb(msg.message); this.gitCheckoutCallbacks.delete(errAid); }
           const fileListCb = this.fileListCallbacks.get(errAid);
           if (fileListCb) { fileListCb(null, msg.message); this.fileListCallbacks.delete(errAid); }
           const fileDirCb = this.fileDirCallbacks.get(errAid);
@@ -432,6 +454,16 @@ class BrowserSocket {
   gitRevert(anid: string, aid: string, cwd: string, paths: string[], includeUntracked: boolean, cb: (error?: string) => void) {
     this.revertCallbacks.set(aid, cb);
     this.send({ type: 'git_revert', anid, aid, cwd, paths, includeUntracked });
+  }
+
+  gitListBranches(anid: string, aid: string, cwd: string, cb: (branches: string[] | null, error?: string) => void) {
+    this.gitBranchesCallbacks.set(aid, cb);
+    this.send({ type: 'git_list_branches', anid, aid, cwd });
+  }
+
+  gitCheckout(anid: string, aid: string, cwd: string, branch: string, cb: (error?: string) => void) {
+    this.gitCheckoutCallbacks.set(aid, cb);
+    this.send({ type: 'git_checkout', anid, aid, cwd, branch });
   }
 
   fileList(anid: string, aid: string, cwd: string, cb: (files: string[] | null, error?: string) => void) {
