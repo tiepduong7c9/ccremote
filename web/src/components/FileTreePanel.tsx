@@ -200,7 +200,7 @@ export default function FileTreePanel({ anid, cwd }: Props) {
   }
 
   const rootEntries = cache.get('');
-  const loading = rootEntries === 'loading' || rootEntries === undefined;
+  const loading = (rootEntries === 'loading' || rootEntries === undefined) && !error;
 
   return (
     <>

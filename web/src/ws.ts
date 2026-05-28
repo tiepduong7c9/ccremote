@@ -269,10 +269,32 @@ class BrowserSocket {
         console.error('[ccremote]', msg.message);
         const errAid = msg.aid;
         if (errAid) {
-          const cb1 = this.claudeMdReadCallbacks.get(errAid);
-          if (cb1) { cb1(null, msg.message); this.claudeMdReadCallbacks.delete(errAid); }
-          const cb2 = this.claudeMdWriteCallbacks.get(errAid);
-          if (cb2) { cb2(msg.message); this.claudeMdWriteCallbacks.delete(errAid); }
+          const repoCb = this.repoCallbacks.get(errAid);
+          if (repoCb) { repoCb(null, msg.message); this.repoCallbacks.delete(errAid); }
+          const statusCb = this.statusCallbacks.get(errAid);
+          if (statusCb) { statusCb(null, msg.message); this.statusCallbacks.delete(errAid); }
+          const diffCb = this.diffCallbacks.get(errAid);
+          if (diffCb) { diffCb(null, msg.message); this.diffCallbacks.delete(errAid); }
+          const pullCb = this.pullCallbacks.get(errAid);
+          if (pullCb) { pullCb(null, msg.message); this.pullCallbacks.delete(errAid); }
+          const revertCb = this.revertCallbacks.get(errAid);
+          if (revertCb) { revertCb(msg.message); this.revertCallbacks.delete(errAid); }
+          const fileListCb = this.fileListCallbacks.get(errAid);
+          if (fileListCb) { fileListCb(null, msg.message); this.fileListCallbacks.delete(errAid); }
+          const fileDirCb = this.fileDirCallbacks.get(errAid);
+          if (fileDirCb) { fileDirCb(null, msg.message); this.fileDirCallbacks.delete(errAid); }
+          const fileReadCb = this.fileReadCallbacks.get(errAid);
+          if (fileReadCb) { fileReadCb(null, msg.message); this.fileReadCallbacks.delete(errAid); }
+          const fileWriteCb = this.fileWriteCallbacks.get(errAid);
+          if (fileWriteCb) { fileWriteCb(msg.message); this.fileWriteCallbacks.delete(errAid); }
+          const fileDeleteCb = this.fileDeleteCallbacks.get(errAid);
+          if (fileDeleteCb) { fileDeleteCb(msg.message); this.fileDeleteCallbacks.delete(errAid); }
+          const fileDownloadCb = this.fileDownloadCallbacks.get(errAid);
+          if (fileDownloadCb) { fileDownloadCb(null, msg.message); this.fileDownloadCallbacks.delete(errAid); }
+          const claudeMdReadCb = this.claudeMdReadCallbacks.get(errAid);
+          if (claudeMdReadCb) { claudeMdReadCb(null, msg.message); this.claudeMdReadCallbacks.delete(errAid); }
+          const claudeMdWriteCb = this.claudeMdWriteCallbacks.get(errAid);
+          if (claudeMdWriteCb) { claudeMdWriteCb(msg.message); this.claudeMdWriteCallbacks.delete(errAid); }
         }
         break;
       }
