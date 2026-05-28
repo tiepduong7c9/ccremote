@@ -14,8 +14,8 @@ interface Props {
 }
 
 interface ConfirmRevert {
-  path: string;
-  isFolder: boolean;
+  paths: string[];
+  label: string;
   scopedFiles: GitFileChange[];
 }
 
@@ -23,7 +23,8 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
   const { statusBySid, viewMode, setViewMode, loadStatus, pull, revertFiles, listBranches, checkout, fetchLog } = useGitStore();
   const status = statusBySid.get(sid);
   const [diffFile, setDiffFile] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const lastClickedIndex = useRef<number | null>(null);
   const [collapseRevision, setCollapseRevision] = useState(0);
   const [confirmRevert, setConfirmRevert] = useState<ConfirmRevert | null>(null);
   const [includeUntracked, setIncludeUntracked] = useState(false);
@@ -43,6 +44,11 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
   useEffect(() => {
     if (cwd) loadStatus(anid, sid, cwd);
   }, [anid, sid, cwd]);
+
+  useEffect(() => {
+    setSelectedFiles(new Set());
+    lastClickedIndex.current = null;
+  }, [sid]);
 
   useEffect(() => {
     if (!branchMenuOpen) return;
@@ -105,13 +111,31 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
     }
   };
 
-  const handleOpen = (p: string) => {
-    setSelectedFile(p);
-    setDiffFile(p);
+  const handleFileClick = (path: string, shiftKey: boolean) => {
+    if (!status) return;
+    const idx = status.files.findIndex(f => f.path === path);
+    if (shiftKey && lastClickedIndex.current !== null) {
+      const lo = Math.min(lastClickedIndex.current, idx);
+      const hi = Math.max(lastClickedIndex.current, idx);
+      const range = status.files.slice(lo, hi + 1).map(f => f.path);
+      setSelectedFiles(prev => new Set([...prev, ...range]));
+    } else {
+      setSelectedFiles(new Set([path]));
+      lastClickedIndex.current = idx;
+      setDiffFile(path);
+    }
   };
 
   const handleRevert = (path: string, isFolder: boolean) => {
     if (!status) return;
+    if (!isFolder && selectedFiles.size > 1 && selectedFiles.has(path)) {
+      const paths = [...selectedFiles];
+      const scopedFiles = status.files.filter(f => paths.includes(f.path));
+      setIncludeUntracked(false);
+      setRevertError(null);
+      setConfirmRevert({ paths, label: `${paths.length} files`, scopedFiles });
+      return;
+    }
     let scopedFiles: GitFileChange[];
     if (isFolder) {
       const prefix = path + '/';
@@ -121,7 +145,16 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
     }
     setIncludeUntracked(false);
     setRevertError(null);
-    setConfirmRevert({ path, isFolder, scopedFiles });
+    setConfirmRevert({ paths: [path], label: isFolder ? 'folder' : 'file', scopedFiles });
+  };
+
+  const handleMultiRevert = () => {
+    if (!status || selectedFiles.size === 0) return;
+    const paths = [...selectedFiles];
+    const scopedFiles = status.files.filter(f => paths.includes(f.path));
+    setIncludeUntracked(false);
+    setRevertError(null);
+    setConfirmRevert({ paths, label: `${paths.length} files`, scopedFiles });
   };
 
   const handleRevertConfirm = async () => {
@@ -129,14 +162,10 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
     setReverting(true);
     setRevertError(null);
     try {
-      await revertFiles(anid, sid, cwd, [confirmRevert.path], includeUntracked);
+      await revertFiles(anid, sid, cwd, confirmRevert.paths, includeUntracked);
       setConfirmRevert(null);
-      if (selectedFile) {
-        const prefix = confirmRevert.isFolder ? confirmRevert.path + '/' : null;
-        if (selectedFile === confirmRevert.path || (prefix && selectedFile.startsWith(prefix))) {
-          setSelectedFile(null);
-        }
-      }
+      setSelectedFiles(new Set());
+      lastClickedIndex.current = null;
     } catch (e: unknown) {
       setRevertError(e instanceof Error ? e.message : 'Revert failed');
     } finally {
@@ -152,10 +181,22 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
       <div className="flex flex-col flex-1 min-h-0">
         {/* Toolbar */}
         <div className="flex items-center gap-1 px-2 h-8 border-b border-base-300 shrink-0">
-          <span className="text-xs text-base-content/40 flex-1 truncate">
-            {status && !status.loading && !status.error && status.files.length > 0
-              ? `${status.files.length} file${status.files.length !== 1 ? 's' : ''} changed`
-              : ''}
+          <span className="flex items-center gap-1.5 flex-1 min-w-0">
+            <span className="text-xs text-base-content/40 truncate">
+              {status && !status.loading && !status.error && status.files.length > 0
+                ? `${status.files.length} file${status.files.length !== 1 ? 's' : ''} changed`
+                : ''}
+            </span>
+            {selectedFiles.size > 1 && (
+              <button
+                className="btn btn-xs btn-warning h-5 min-h-0 px-1.5 gap-0.5 shrink-0"
+                onClick={handleMultiRevert}
+                title={`Revert ${selectedFiles.size} selected files`}
+              >
+                <RotateCcw size={9} />
+                <span>{selectedFiles.size}</span>
+              </button>
+            )}
           </span>
           <button
             className="btn btn-xs btn-ghost p-0 w-6 h-6"
@@ -219,9 +260,9 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
           {status && !status.loading && !status.error && status.files.length > 0 && (
             <>
               {viewMode === 'flat' ? (
-                <GitFileList files={status.files} selectedFile={selectedFile} onOpen={handleOpen} onRevert={handleRevert} />
+                <GitFileList files={status.files} selectedFiles={selectedFiles} selectedCount={selectedFiles.size} onFileClick={handleFileClick} onRevert={handleRevert} />
               ) : (
-                <GitFileTree files={status.files} selectedFile={selectedFile} onOpen={handleOpen} onRevert={handleRevert} collapseRevision={collapseRevision} />
+                <GitFileTree files={status.files} selectedFiles={selectedFiles} selectedCount={selectedFiles.size} onFileClick={handleFileClick} onRevert={handleRevert} collapseRevision={collapseRevision} />
               )}
             </>
           )}
@@ -320,12 +361,23 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
             <div className="flex items-center gap-2 mb-3">
               <RotateCcw size={15} className="text-warning shrink-0" />
               <h3 className="font-semibold text-sm">
-                Revert {confirmRevert.isFolder ? 'folder' : 'file'}?
+                Revert {confirmRevert.label}?
               </h3>
             </div>
-            <p className="text-xs text-base-content/70 mb-1 break-all font-mono">
-              {confirmRevert.path}{confirmRevert.isFolder ? '/' : ''}
-            </p>
+            {confirmRevert.paths.length === 1 ? (
+              <p className="text-xs text-base-content/70 mb-1 break-all font-mono">
+                {confirmRevert.paths[0]}{confirmRevert.label === 'folder' ? '/' : ''}
+              </p>
+            ) : (
+              <ul className="text-xs text-base-content/70 mb-1 font-mono max-h-24 overflow-y-auto space-y-0.5">
+                {confirmRevert.paths.slice(0, 6).map(p => (
+                  <li key={p} className="truncate">{p}</li>
+                ))}
+                {confirmRevert.paths.length > 6 && (
+                  <li className="text-base-content/40">…and {confirmRevert.paths.length - 6} more</li>
+                )}
+              </ul>
+            )}
             {trackedCount > 0 && (
               <p className="text-xs text-base-content/60 mb-3">
                 {trackedCount} tracked file{trackedCount !== 1 ? 's' : ''} will be restored to the last commit. This cannot be undone.
