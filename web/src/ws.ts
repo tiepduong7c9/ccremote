@@ -3,7 +3,7 @@ import type { Terminal } from '@xterm/xterm';
 function b64ToBytes(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 }
-import type { GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
+import type { GitCommit, GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
 import { notificationsEnabled } from './lib/notifications';
 import { useRegistryStore, useTerminalStore } from './store';
 
@@ -49,6 +49,7 @@ class BrowserSocket {
   private claudeMdWriteCallbacks: Map<string, (error?: string) => void> = new Map();
   private gitBranchesCallbacks: Map<string, (branches: string[] | null, error?: string) => void> = new Map();
   private gitCheckoutCallbacks: Map<string, (error?: string) => void> = new Map();
+  private gitLogCallbacks: Map<string, (commits: GitCommit[] | null, error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -179,6 +180,8 @@ class BrowserSocket {
         if (gitBranchesCb) { gitBranchesCb(null, msg.message); this.gitBranchesCallbacks.delete(msg.aid); break; }
         const gitCheckoutCb = this.gitCheckoutCallbacks.get(msg.aid);
         if (gitCheckoutCb) { gitCheckoutCb(msg.message); this.gitCheckoutCallbacks.delete(msg.aid); break; }
+        const gitLogCb = this.gitLogCallbacks.get(msg.aid);
+        if (gitLogCb) { gitLogCb(null, msg.message); this.gitLogCallbacks.delete(msg.aid); break; }
         const fileListCb = this.fileListCallbacks.get(msg.aid);
         if (fileListCb) { fileListCb(null, msg.message); this.fileListCallbacks.delete(msg.aid); break; }
         const fileDirCb = this.fileDirCallbacks.get(msg.aid);
@@ -229,6 +232,12 @@ class BrowserSocket {
       case 'git_checkout_result': {
         const cb = this.gitCheckoutCallbacks.get(msg.aid);
         if (cb) { cb(); this.gitCheckoutCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'git_log_result': {
+        const cb = this.gitLogCallbacks.get(msg.aid);
+        if (cb) { cb(msg.commits); this.gitLogCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -301,6 +310,8 @@ class BrowserSocket {
           if (gitBranchesCb) { gitBranchesCb(null, msg.message); this.gitBranchesCallbacks.delete(errAid); }
           const gitCheckoutCb = this.gitCheckoutCallbacks.get(errAid);
           if (gitCheckoutCb) { gitCheckoutCb(msg.message); this.gitCheckoutCallbacks.delete(errAid); }
+          const gitLogCb = this.gitLogCallbacks.get(errAid);
+          if (gitLogCb) { gitLogCb(null, msg.message); this.gitLogCallbacks.delete(errAid); }
           const fileListCb = this.fileListCallbacks.get(errAid);
           if (fileListCb) { fileListCb(null, msg.message); this.fileListCallbacks.delete(errAid); }
           const fileDirCb = this.fileDirCallbacks.get(errAid);
@@ -464,6 +475,11 @@ class BrowserSocket {
   gitCheckout(anid: string, aid: string, cwd: string, branch: string, cb: (error?: string) => void) {
     this.gitCheckoutCallbacks.set(aid, cb);
     this.send({ type: 'git_checkout', anid, aid, cwd, branch });
+  }
+
+  gitLog(anid: string, aid: string, cwd: string, limit: number, cb: (commits: GitCommit[] | null, error?: string) => void) {
+    this.gitLogCallbacks.set(aid, cb);
+    this.send({ type: 'git_log', anid, aid, cwd, limit });
   }
 
   fileList(anid: string, aid: string, cwd: string, cb: (files: string[] | null, error?: string) => void) {

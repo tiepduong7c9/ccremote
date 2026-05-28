@@ -374,6 +374,14 @@ class ServerLink {
         break;
       }
 
+      case 'git_log': {
+        const { aid, cwd, limit } = msg;
+        this._git.log(cwd, limit)
+          .then(({ commits }) => this._send({ type: 'git_log_result', aid, commits }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
       case 'file_list': {
         const { aid, cwd } = msg;
         this._git.listFiles(cwd)

@@ -1,3 +1,11 @@
+export interface GitCommit {
+  hash: string;
+  shortHash: string;
+  author: string;
+  timestamp: number;
+  subject: string;
+}
+
 export interface GitWorktree {
   path: string;
   branch: string | null;
@@ -58,6 +66,7 @@ export type ServerMsg =
   | { type: 'git_diff_result'; anid: string; aid: string; path: string; oldContent: string; newContent: string; language: string; isBinary: boolean; tooLarge: boolean }
   | { type: 'git_pull_result'; anid: string; aid: string; output: string }
   | { type: 'git_revert_result'; anid: string; aid: string }
+  | { type: 'git_log_result'; anid: string; aid: string; commits: GitCommit[] }
   | { type: 'file_list_result'; anid: string; aid: string; files: string[] }
   | { type: 'file_list_dir_result'; anid: string; aid: string; entries: { name: string; isDir: boolean }[] }
   | { type: 'file_read_result'; anid: string; aid: string; path: string; content: string; language: string; isBinary: boolean; tooLarge: boolean }
@@ -69,7 +78,7 @@ export type ServerMsg =
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'claude_md_read' | 'claude_md_write';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'claude_md_read' | 'claude_md_write';
   anid: string;
   aid?: string;
   sid?: string;
@@ -87,4 +96,5 @@ export type BrowserMsg = {
   ext?: string;
   subPath?: string;
   branch?: string;
+  limit?: number;
 };

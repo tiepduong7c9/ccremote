@@ -68,6 +68,7 @@ class AgentnodeHub extends EventEmitter {
       case 'git_diff_result':
       case 'git_pull_result':
       case 'git_revert_result':
+      case 'git_log_result':
       case 'git_branches_result':
       case 'git_checkout_result':
       case 'file_list_result':

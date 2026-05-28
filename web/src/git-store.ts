@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import type { GitFileChange } from './lib/protocol';
+import type { GitCommit, GitFileChange } from './lib/protocol';
 import { browserSocket } from './ws';
 
 export interface GitStatusEntry {
@@ -32,6 +32,7 @@ interface GitState {
   revertFiles: (anid: string, sid: string, cwd: string, paths: string[], includeUntracked: boolean) => Promise<void>;
   listBranches: (anid: string, cwd: string) => Promise<string[]>;
   checkout: (anid: string, sid: string, cwd: string, branch: string) => Promise<void>;
+  fetchLog: (anid: string, cwd: string, limit?: number) => Promise<GitCommit[]>;
   clearForSession: (sid: string) => void;
 }
 
@@ -145,6 +146,18 @@ export const useGitStore = create<GitState>((set, get) => ({
           get().loadStatus(anid, sid, cwd);
           resolve();
         }
+      });
+    });
+  },
+
+  fetchLog: (anid, cwd, limit = 30) => {
+    return new Promise<GitCommit[]>((resolve, reject) => {
+      const aid = nanoid();
+      const t = setTimeout(() => reject(new Error('Request timed out')), 15000);
+      browserSocket.gitLog(anid, aid, cwd, limit, (commits, error) => {
+        clearTimeout(t);
+        if (error || !commits) reject(new Error(error ?? 'Unknown error'));
+        else resolve(commits);
       });
     });
   },
