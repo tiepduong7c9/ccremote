@@ -100,6 +100,12 @@ if [[ "$MODE" == "update" ]]; then
   if [[ -d "$ROOT/.git" ]]; then
     git -C "$ROOT" pull
   else
+    # Remove source dirs/files first so renamed/deleted files don't linger.
+    # server/data is gitignored (persistent config) — intentionally preserved.
+    rm -rf "$ROOT/web/src" \
+           "$ROOT/agentnode/src" "$ROOT/agentnode/bin" \
+           "$ROOT/server/routes" "$ROOT/server/ws"
+    rm -f  "$ROOT/server/"*.js "$ROOT/scripts/"*.js
     curl -fsSL "$REPO_TARBALL" | tar -xz -C "$ROOT" --strip-components=1
   fi
   # Reinstall deps + rebuild frontend
