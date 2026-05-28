@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuthStore, useRegistryStore } from './store';
 import { browserSocket } from './ws';
 import LoginScreen from './components/LoginScreen';
@@ -7,11 +7,13 @@ import TerminalTabs from './components/TerminalTabs';
 import ThemeToggle from './components/ThemeToggle';
 import NotificationToggle from './components/NotificationToggle';
 import RightPanel from './components/RightPanel';
+import FileSearchModal from './components/FileSearchModal';
 import { Folder, TerminalSquare, ChevronRight } from 'lucide-react';
 
 export default function App() {
   const { authed, check } = useAuthStore();
   const { selectedAnid, selectedSid, select, agentnodes } = useRegistryStore();
+  const [showFileSearch, setShowFileSearch] = useState(false);
 
   const session = selectedAnid && selectedSid
     ? agentnodes.get(selectedAnid)?.sessions.find(s => s.id === selectedSid)
@@ -20,6 +22,25 @@ export default function App() {
   const folder = session?.cwd
     ? session.cwd.split('/').filter(Boolean).pop() || '/'
     : null;
+
+  // Ref so the keydown handler always sees current session without re-registering
+  const fileSearchContextRef = useRef<{ anid: string; cwd: string } | null>(null);
+  useEffect(() => {
+    fileSearchContextRef.current = (selectedAnid && session?.cwd)
+      ? { anid: selectedAnid, cwd: session.cwd }
+      : null;
+  }, [selectedAnid, session?.cwd]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault();
+        if (fileSearchContextRef.current) setShowFileSearch(s => !s);
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, []);
 
   useEffect(() => {
     check();
@@ -76,6 +97,13 @@ export default function App() {
       </div>
       {selectedAnid && selectedSid && (
         <RightPanel anid={selectedAnid} sid={selectedSid} cwd={session?.cwd ?? ''} />
+      )}
+      {showFileSearch && fileSearchContextRef.current && (
+        <FileSearchModal
+          anid={fileSearchContextRef.current.anid}
+          cwd={fileSearchContextRef.current.cwd}
+          onClose={() => setShowFileSearch(false)}
+        />
       )}
     </div>
   );
