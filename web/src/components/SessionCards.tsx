@@ -744,9 +744,13 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
               <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
               <span className="text-[10px] font-medium text-yellow-600 dark:text-yellow-400">waiting</span>
             </>}
-            {s.status === 'running' && (!s.claudeStatus || s.claudeStatus === 'idle') && <>
+            {s.status === 'running' && !s.claudeStatus && <>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
               <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">idle</span>
+            </>}
+            {s.status === 'running' && s.claudeStatus === 'idle' && <>
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+              <span className="text-[10px] font-medium text-violet-600 dark:text-violet-400">done</span>
             </>}
             {s.status === 'suspended' && <>
               <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 shrink-0" />

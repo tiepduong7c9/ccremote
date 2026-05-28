@@ -5,7 +5,7 @@ function b64ToBytes(b64: string): Uint8Array {
 }
 import type { GitCommit, GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
 import { notificationsEnabled } from './lib/notifications';
-import { useRegistryStore, useTerminalStore } from './store';
+import { useRegistryStore, useTerminalStore, useToastStore } from './store';
 
 class MessageParser {
   private buf = '';
@@ -339,13 +339,17 @@ class BrowserSocket {
       const prev = this.knownStatus.get(s.id);
       const curr = s.claudeStatus;
       if (prev !== undefined && prev !== curr && (curr === 'waiting' || curr === 'idle')) {
-        this.fireNotification(s, nodeName, curr);
+        const folder = s.cwd ? s.cwd.split('/').filter(Boolean).pop() : null;
+        const label = folder ? `[${folder}] ${s.name}` : s.name;
+        const title = curr === 'waiting' ? `${label} needs your input` : `${label} is done`;
+        useToastStore.getState().addToast({ title, body: nodeName || undefined, kind: curr === 'idle' ? 'done' : 'waiting' });
+        this.fireNotification(s, nodeName, curr, title);
       }
       this.knownStatus.set(s.id, curr);
     }
   }
 
-  private fireNotification(s: SessionMeta, nodeName: string, status: 'waiting' | 'idle') {
+  private fireNotification(s: SessionMeta, nodeName: string, status: 'waiting' | 'idle', title: string) {
     if (!notificationsEnabled()) return;
     if (document.visibilityState === 'visible') return;
     const storageKey = `ccremote:notif:${s.id}:${status}`;
@@ -355,9 +359,6 @@ class BrowserSocket {
       const last = parseInt(localStorage.getItem(storageKey) || '0', 10);
       if (last + 30_000 > now) return;
       localStorage.setItem(storageKey, String(now));
-      const folder = s.cwd ? s.cwd.split('/').filter(Boolean).pop() : null;
-      const label = folder ? `[${folder}] ${s.name}` : s.name;
-      const title = status === 'waiting' ? `${label} needs your input` : `${label} is done`;
       new Notification(title, { body: nodeName || undefined, icon: '/favicon.svg' });
     };
     if ('locks' in navigator) {
