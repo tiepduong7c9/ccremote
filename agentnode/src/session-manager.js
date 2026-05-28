@@ -217,7 +217,12 @@ class SessionManager {
 
   detach(id, listener) {
     const session = this._sessions.get(id);
-    if (session) session.listeners.delete(listener);
+    if (!session) return;
+    session.listeners.delete(listener);
+    if (session.listeners.size === 0 && session.meta.claudeStatus === 'idle') {
+      delete session.meta.claudeStatus;
+      this._persist();
+    }
   }
 
   write(id, buf) {
