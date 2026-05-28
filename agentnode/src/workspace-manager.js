@@ -161,6 +161,25 @@ class WorkspaceManager {
     return { output };
   }
 
+  async log(cwd, limit = 30) {
+    const abs = resolvePath(cwd);
+    const SEP = '\x1f';
+    const RS = '\x1e';
+    const output = await run([
+      'log', `-n${limit}`,
+      `--format=%H${SEP}%h${SEP}%an${SEP}%at${SEP}%s${RS}`,
+    ], abs).catch(() => '');
+    const commits = [];
+    for (const entry of output.split(RS)) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      const [hash, shortHash, author, atStr, subject] = trimmed.split(SEP);
+      if (!hash) continue;
+      commits.push({ hash, shortHash, author, timestamp: parseInt(atStr, 10), subject });
+    }
+    return { commits };
+  }
+
   async status(cwd) {
     const abs = resolvePath(cwd);
     const [porcelainBuf, branch] = await Promise.all([

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp, RotateCcw, Check } from 'lucide-react';
+import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp, RotateCcw, Check, History } from 'lucide-react';
 import { useGitStore } from '../git-store';
-import type { GitFileChange } from '../lib/protocol';
+import type { GitCommit, GitFileChange } from '../lib/protocol';
 import GitFileList from './GitFileList';
 import GitFileTree from './GitFileTree';
 import DiffModal from './DiffModal';
+import GitLogModal from './GitLogModal';
 
 interface Props {
   anid: string;
@@ -19,7 +20,7 @@ interface ConfirmRevert {
 }
 
 export default function GitChangesTab({ anid, sid, cwd }: Props) {
-  const { statusBySid, viewMode, setViewMode, loadStatus, pull, revertFiles, listBranches, checkout } = useGitStore();
+  const { statusBySid, viewMode, setViewMode, loadStatus, pull, revertFiles, listBranches, checkout, fetchLog } = useGitStore();
   const status = statusBySid.get(sid);
   const [diffFile, setDiffFile] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -33,6 +34,10 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logCommits, setLogCommits] = useState<GitCommit[]>([]);
+  const [logLoading, setLogLoading] = useState(false);
+  const [logError, setLogError] = useState<string | null>(null);
   const branchMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,6 +58,21 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
 
   const handleRefresh = () => { if (cwd) loadStatus(anid, sid, cwd); };
   const handlePull = () => { if (cwd) pull(anid, sid, cwd); };
+
+  const handleHistoryOpen = async () => {
+    setLogOpen(true);
+    setLogLoading(true);
+    setLogError(null);
+    setLogCommits([]);
+    try {
+      const commits = await fetchLog(anid, cwd);
+      setLogCommits(commits);
+    } catch (e: unknown) {
+      setLogError(e instanceof Error ? e.message : 'Failed to load history');
+    } finally {
+      setLogLoading(false);
+    }
+  };
 
   const handleBranchClick = async () => {
     if (!cwd) return;
@@ -257,6 +277,14 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
           )}
           <button
             className="btn btn-xs btn-ghost p-0 w-6 h-6"
+            onClick={handleHistoryOpen}
+            title="Commit history"
+            disabled={!cwd}
+          >
+            <History size={13} />
+          </button>
+          <button
+            className="btn btn-xs btn-ghost p-0 w-6 h-6"
             onClick={handlePull}
             title="Pull from remote"
             disabled={!cwd || status?.pulling || status?.loading}
@@ -272,6 +300,16 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
           cwd={cwd}
           filePath={diffFile}
           onClose={() => setDiffFile(null)}
+        />
+      )}
+
+      {logOpen && (
+        <GitLogModal
+          branch={status?.branch ?? ''}
+          commits={logCommits}
+          loading={logLoading}
+          error={logError}
+          onClose={() => setLogOpen(false)}
         />
       )}
 
