@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { nanoid } from 'nanoid';
-import { ChevronRight, ChevronDown, File, RefreshCw, ChevronsUp, Trash2, Download } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, RefreshCw, ChevronsUp, Trash2, Download, Upload } from 'lucide-react';
 import { browserSocket } from '../ws';
 import { useToastStore } from '../store';
 import FileModal from './FileModal';
@@ -25,7 +25,7 @@ interface ContextMenu {
   entry: DirEntry;
 }
 
-function TreeNodeRow({ entry, depth, cache, onExpand, collapseRevision, selectedFile, onOpen, onContextMenu }: {
+function TreeNodeRow({ entry, depth, cache, onExpand, collapseRevision, selectedFile, onOpen, onContextMenu, dropTargetDir, onDirDragEnter }: {
   entry: DirEntry;
   depth: number;
   cache: DirCache;
@@ -34,6 +34,8 @@ function TreeNodeRow({ entry, depth, cache, onExpand, collapseRevision, selected
   selectedFile: string | null;
   onOpen: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, entry: DirEntry) => void;
+  dropTargetDir?: string | null;
+  onDirDragEnter?: (path: string) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -50,13 +52,15 @@ function TreeNodeRow({ entry, depth, cache, onExpand, collapseRevision, selected
 
   if (entry.isDir) {
     const children = cache.get(entry.fullPath);
+    const isDragTarget = dropTargetDir === entry.fullPath;
     return (
       <>
         <button
-          className="w-full flex items-center gap-1 py-0.5 hover:bg-base-300 text-left min-w-0"
+          className={`w-full flex items-center gap-1 py-0.5 text-left min-w-0 ${isDragTarget ? 'bg-primary/20 outline outline-1 outline-primary/40 outline-offset-[-1px]' : 'hover:bg-base-300'}`}
           style={{ paddingLeft: `${8 + depth * 12}px` }}
           onClick={() => setOpen(o => !o)}
           onContextMenu={e => onContextMenu(e, entry)}
+          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); onDirDragEnter?.(entry.fullPath); }}
         >
           {open ? <ChevronDown size={12} className="shrink-0 text-base-content/40" /> : <ChevronRight size={12} className="shrink-0 text-base-content/40" />}
           <span className="font-mono text-xs text-base-content/60 truncate">{entry.name}/</span>
@@ -77,6 +81,8 @@ function TreeNodeRow({ entry, depth, cache, onExpand, collapseRevision, selected
             selectedFile={selectedFile}
             onOpen={onOpen}
             onContextMenu={onContextMenu}
+            dropTargetDir={dropTargetDir}
+            onDirDragEnter={onDirDragEnter}
           />
         ))}
       </>
@@ -106,6 +112,9 @@ export default function FileTreePanel({ anid, cwd }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<DirEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [dropDir, setDropDir] = useState<string | null>(null);
+  const dragCounterRef = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const loadDir = useCallback((subPath: string) => {
@@ -133,6 +142,29 @@ export default function FileTreePanel({ anid, cwd }: Props) {
   }, [loadDir]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleFileDrop = useCallback((files: FileList, targetDir: string) => {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const destPath = targetDir ? `${targetDir}/${file.name}` : file.name;
+      const aid = nanoid();
+      const { addToast, updateToast, removeToast } = useToastStore.getState();
+      const toastId = addToast({ title: `Uploading ${file.name}`, kind: 'progress', percent: 0 });
+      browserSocket.fileUpload(anid, aid, cwd, destPath, file, (err) => {
+        if (err) {
+          removeToast(toastId);
+          setError(err);
+          return;
+        }
+        updateToast(toastId, { kind: 'done', title: `Uploaded ${file.name}`, percent: undefined });
+        setTimeout(() => removeToast(toastId), 3000);
+        setCache(prev => { const next = new Map(prev); next.delete(targetDir); return next; });
+        loadDir(targetDir);
+      }, (percent) => {
+        updateToast(toastId, { percent });
+      });
+    }
+  }, [anid, cwd, loadDir]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -232,8 +264,29 @@ export default function FileTreePanel({ anid, cwd }: Props) {
           </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        {/* Body / drop zone */}
+        <div
+          className={`flex-1 overflow-y-auto overflow-x-hidden min-h-0 relative${isDragOver ? ' ring-2 ring-primary ring-inset' : ''}`}
+          onDragEnter={(e) => { e.preventDefault(); dragCounterRef.current++; setIsDragOver(true); }}
+          onDragLeave={() => { dragCounterRef.current--; if (dragCounterRef.current === 0) { setIsDragOver(false); setDropDir(null); } }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            dragCounterRef.current = 0;
+            setIsDragOver(false);
+            const targetDir = dropDir ?? '';
+            setDropDir(null);
+            if (e.dataTransfer.files.length > 0) handleFileDrop(e.dataTransfer.files, targetDir);
+          }}
+        >
+          {isDragOver && (
+            <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-primary-content text-xs font-medium shadow-lg">
+                <Upload size={12} />
+                {dropDir ? `Upload to ${dropDir.split('/').pop()}/` : 'Upload to root'}
+              </div>
+            </div>
+          )}
           {loading && (
             <div className="flex items-center justify-center h-16">
               <span className="loading loading-spinner loading-sm" />
@@ -255,6 +308,8 @@ export default function FileTreePanel({ anid, cwd }: Props) {
                     selectedFile={selectedFile}
                     onOpen={handleOpen}
                     onContextMenu={handleContextMenu}
+                    dropTargetDir={dropDir}
+                    onDirDragEnter={setDropDir}
                   />
                 </li>
               ))}

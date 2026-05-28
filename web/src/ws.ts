@@ -3,6 +3,16 @@ import type { Terminal } from '@xterm/xterm';
 function b64ToBytes(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 }
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const BATCH = 8192;
+  for (let i = 0; i < bytes.length; i += BATCH) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + BATCH));
+  }
+  return btoa(binary);
+}
 import type { GitCommit, GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
 import { notificationsEnabled } from './lib/notifications';
 import { useRegistryStore, useTerminalStore, useToastStore } from './store';
@@ -47,6 +57,8 @@ class BrowserSocket {
   private fileDownloadCallbacks: Map<string, (result: { chunks: string[]; size: number } | null, error?: string) => void> = new Map();
   private fileDownloadProgressCallbacks: Map<string, (percent: number) => void> = new Map();
   private fileDownloadChunks: Map<string, { chunks: string[]; received: number; total: number; size: number }> = new Map();
+  private fileUploadCallbacks: Map<string, (error?: string) => void> = new Map();
+  private fileUploadProgressCallbacks: Map<string, (percent: number) => void> = new Map();
   private claudeMdReadCallbacks: Map<string, (content: string | null, error?: string) => void> = new Map();
   private claudeMdWriteCallbacks: Map<string, (error?: string) => void> = new Map();
   private gitBranchesCallbacks: Map<string, (branches: string[] | null, error?: string) => void> = new Map();
@@ -194,6 +206,8 @@ class BrowserSocket {
         if (fileWriteCb) { fileWriteCb(msg.message); this.fileWriteCallbacks.delete(msg.aid); break; }
         const fileDeleteCb = this.fileDeleteCallbacks.get(msg.aid);
         if (fileDeleteCb) { fileDeleteCb(msg.message); this.fileDeleteCallbacks.delete(msg.aid); break; }
+        const fileUploadCb = this.fileUploadCallbacks.get(msg.aid);
+        if (fileUploadCb) { this.fileUploadCallbacks.delete(msg.aid); this.fileUploadProgressCallbacks.delete(msg.aid); fileUploadCb(msg.message); break; }
         const claudeMdReadCb = this.claudeMdReadCallbacks.get(msg.aid);
         if (claudeMdReadCb) { claudeMdReadCb(null, msg.message); this.claudeMdReadCallbacks.delete(msg.aid); break; }
         const claudeMdWriteCb = this.claudeMdWriteCallbacks.get(msg.aid);
@@ -301,6 +315,17 @@ class BrowserSocket {
         break;
       }
 
+      case 'file_upload_result': {
+        const cb = this.fileUploadCallbacks.get(msg.aid);
+        if (cb) {
+          this.fileUploadProgressCallbacks.get(msg.aid)?.(100);
+          this.fileUploadCallbacks.delete(msg.aid);
+          this.fileUploadProgressCallbacks.delete(msg.aid);
+          cb();
+        }
+        break;
+      }
+
       case 'claude_md_read_result': {
         const cb = this.claudeMdReadCallbacks.get(msg.aid);
         if (cb) { cb(msg.content); this.claudeMdReadCallbacks.delete(msg.aid); }
@@ -345,6 +370,8 @@ class BrowserSocket {
           if (fileDeleteCb) { fileDeleteCb(msg.message); this.fileDeleteCallbacks.delete(errAid); }
           const fileDownloadCb = this.fileDownloadCallbacks.get(errAid);
           if (fileDownloadCb) { fileDownloadCb(null, msg.message); this.fileDownloadCallbacks.delete(errAid); this.fileDownloadProgressCallbacks.delete(errAid); this.fileDownloadChunks.delete(errAid); }
+          const fileUploadErrCb = this.fileUploadCallbacks.get(errAid);
+          if (fileUploadErrCb) { fileUploadErrCb(msg.message); this.fileUploadCallbacks.delete(errAid); this.fileUploadProgressCallbacks.delete(errAid); }
           const claudeMdReadCb = this.claudeMdReadCallbacks.get(errAid);
           if (claudeMdReadCb) { claudeMdReadCb(null, msg.message); this.claudeMdReadCallbacks.delete(errAid); }
           const claudeMdWriteCb = this.claudeMdWriteCallbacks.get(errAid);
@@ -543,6 +570,27 @@ class BrowserSocket {
   claudeMdWrite(anid: string, aid: string, content: string, cb: (error?: string) => void) {
     this.claudeMdWriteCallbacks.set(aid, cb);
     this.send({ type: 'claude_md_write', anid, aid, content });
+  }
+
+  async fileUpload(anid: string, aid: string, cwd: string, destPath: string, file: File, cb: (error?: string) => void, onProgress?: (percent: number) => void) {
+    this.fileUploadCallbacks.set(aid, cb);
+    if (onProgress) this.fileUploadProgressCallbacks.set(aid, onProgress);
+    const CHUNK = 3 * 1024 * 1024;
+    const total = Math.max(1, Math.ceil(file.size / CHUNK));
+    try {
+      for (let i = 0; i < total; i++) {
+        const start = i * CHUNK;
+        const end = Math.min(start + CHUNK, file.size);
+        const buffer = await file.slice(start, end).arrayBuffer();
+        const base64 = arrayBufferToBase64(buffer);
+        this.send({ type: 'file_upload_chunk', anid, aid, cwd, path: destPath, index: i, total, base64, size: file.size });
+        if (onProgress) onProgress(Math.round(((i + 1) / total) * 95));
+      }
+    } catch (err) {
+      this.fileUploadCallbacks.delete(aid);
+      this.fileUploadProgressCallbacks.delete(aid);
+      cb((err as Error).message || 'Upload failed');
+    }
   }
 }
 
