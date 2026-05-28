@@ -30,6 +30,8 @@ interface GitState {
   pull: (anid: string, sid: string, cwd: string) => void;
   fetchDiff: (anid: string, cwd: string, filePath: string) => Promise<GitDiffResult>;
   revertFiles: (anid: string, sid: string, cwd: string, paths: string[], includeUntracked: boolean) => Promise<void>;
+  listBranches: (anid: string, cwd: string) => Promise<string[]>;
+  checkout: (anid: string, sid: string, cwd: string, branch: string) => Promise<void>;
   clearForSession: (sid: string) => void;
 }
 
@@ -115,6 +117,29 @@ export const useGitStore = create<GitState>((set, get) => ({
     return new Promise<void>((resolve, reject) => {
       const aid = nanoid();
       browserSocket.gitRevert(anid, aid, cwd, paths, includeUntracked, (error) => {
+        if (error) reject(new Error(error));
+        else {
+          get().loadStatus(anid, sid, cwd);
+          resolve();
+        }
+      });
+    });
+  },
+
+  listBranches: (anid, cwd) => {
+    return new Promise<string[]>((resolve, reject) => {
+      const aid = nanoid();
+      browserSocket.gitListBranches(anid, aid, cwd, (branches, error) => {
+        if (error || !branches) reject(new Error(error ?? 'Unknown error'));
+        else resolve(branches);
+      });
+    });
+  },
+
+  checkout: (anid, sid, cwd, branch) => {
+    return new Promise<void>((resolve, reject) => {
+      const aid = nanoid();
+      browserSocket.gitCheckout(anid, aid, cwd, branch, (error) => {
         if (error) reject(new Error(error));
         else {
           get().loadStatus(anid, sid, cwd);

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp, RotateCcw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp, RotateCcw, Check } from 'lucide-react';
 import { useGitStore } from '../git-store';
 import type { GitFileChange } from '../lib/protocol';
 import GitFileList from './GitFileList';
@@ -19,7 +19,7 @@ interface ConfirmRevert {
 }
 
 export default function GitChangesTab({ anid, sid, cwd }: Props) {
-  const { statusBySid, viewMode, setViewMode, loadStatus, pull, revertFiles } = useGitStore();
+  const { statusBySid, viewMode, setViewMode, loadStatus, pull, revertFiles, listBranches, checkout } = useGitStore();
   const status = statusBySid.get(sid);
   const [diffFile, setDiffFile] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -28,13 +28,62 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
   const [includeUntracked, setIncludeUntracked] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [revertError, setRevertError] = useState<string | null>(null);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const branchMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (cwd) loadStatus(anid, sid, cwd);
   }, [anid, sid, cwd]);
 
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (branchMenuRef.current && !branchMenuRef.current.contains(e.target as Node)) {
+        setBranchMenuOpen(false);
+        setCheckoutError(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [branchMenuOpen]);
+
   const handleRefresh = () => { if (cwd) loadStatus(anid, sid, cwd); };
   const handlePull = () => { if (cwd) pull(anid, sid, cwd); };
+
+  const handleBranchClick = async () => {
+    if (!cwd) return;
+    setBranchMenuOpen(v => !v);
+    setCheckoutError(null);
+    if (!branchMenuOpen) {
+      setBranchesLoading(true);
+      try {
+        const list = await listBranches(anid, cwd);
+        setBranches(list);
+      } catch {
+        setBranches([]);
+      } finally {
+        setBranchesLoading(false);
+      }
+    }
+  };
+
+  const handleCheckout = async (branch: string) => {
+    if (!cwd || branch === status?.branch) { setBranchMenuOpen(false); return; }
+    setCheckingOut(branch);
+    setCheckoutError(null);
+    try {
+      await checkout(anid, sid, cwd, branch);
+      setBranchMenuOpen(false);
+    } catch (e: unknown) {
+      setCheckoutError(e instanceof Error ? e.message : 'Checkout failed');
+    } finally {
+      setCheckingOut(null);
+    }
+  };
 
   const handleOpen = (p: string) => {
     setSelectedFile(p);
@@ -159,11 +208,48 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-1 px-2 h-9 border-t border-base-300 shrink-0">
-          <GitBranch size={12} className="text-base-content/40 shrink-0" />
-          <span className="text-xs font-mono text-base-content/60 truncate flex-1 min-w-0">
-            {status?.branch || '—'}
-          </span>
+        <div className="relative flex items-center gap-1 px-2 h-9 border-t border-base-300 shrink-0" ref={branchMenuRef}>
+          {branchMenuOpen && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 mx-1 bg-base-100 border border-base-300 rounded shadow-lg z-20 max-h-48 overflow-y-auto">
+              {branchesLoading && (
+                <div className="flex items-center justify-center py-3">
+                  <span className="loading loading-spinner loading-xs" />
+                </div>
+              )}
+              {!branchesLoading && branches.length === 0 && (
+                <div className="px-3 py-2 text-xs text-base-content/40">No branches found</div>
+              )}
+              {!branchesLoading && branches.map(b => (
+                <button
+                  key={b}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono text-left hover:bg-base-200 disabled:opacity-50 ${b === status?.branch ? 'text-primary' : 'text-base-content'}`}
+                  onClick={() => handleCheckout(b)}
+                  disabled={checkingOut !== null}
+                >
+                  {b === status?.branch
+                    ? <Check size={11} className="shrink-0" />
+                    : <span className="w-[11px] shrink-0" />
+                  }
+                  <span className="truncate">{b}</span>
+                  {checkingOut === b && <span className="loading loading-spinner loading-xs ml-auto" />}
+                </button>
+              ))}
+              {checkoutError && (
+                <div className="px-3 py-2 text-xs text-error border-t border-base-300">{checkoutError}</div>
+              )}
+            </div>
+          )}
+          <button
+            className="flex items-center gap-1 min-w-0 flex-1 hover:text-base-content text-base-content/60 disabled:cursor-default disabled:hover:text-base-content/60"
+            onClick={handleBranchClick}
+            disabled={!cwd || !status}
+            title="Switch branch"
+          >
+            <GitBranch size={12} className="text-base-content/40 shrink-0" />
+            <span className="text-xs font-mono truncate flex-1 min-w-0 text-left">
+              {status?.branch || '—'}
+            </span>
+          </button>
           {status?.pullError && (
             <span className="text-xs text-error truncate max-w-[6rem]" title={status.pullError}>
               {status.pullError}

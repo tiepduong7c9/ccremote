@@ -143,6 +143,18 @@ class WorkspaceManager {
     await run(['worktree', 'remove', '--force', abs], repoPath);
   }
 
+  async listBranches(cwd) {
+    const abs = resolvePath(cwd);
+    const output = await run(['branch', '--list', '--format=%(refname:short)'], abs);
+    const branches = output.split('\n').map(b => b.trim()).filter(Boolean);
+    return { branches };
+  }
+
+  async checkout(cwd, branch) {
+    const abs = resolvePath(cwd);
+    await run(['checkout', branch], abs);
+  }
+
   async pull(cwd) {
     const abs = resolvePath(cwd);
     const output = await run(['pull'], abs);
