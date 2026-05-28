@@ -11,12 +11,13 @@ interface ContextMenuState {
 
 interface Props {
   files: GitFileChange[];
-  selectedFile: string | null;
-  onOpen: (path: string) => void;
+  selectedFiles: Set<string>;
+  selectedCount: number;
+  onFileClick: (path: string, shiftKey: boolean) => void;
   onRevert: (path: string, isFolder: boolean) => void;
 }
 
-export default function GitFileList({ files, selectedFile, onOpen, onRevert }: Props) {
+export default function GitFileList({ files, selectedFiles, selectedCount, onFileClick, onRevert }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -35,6 +36,8 @@ export default function GitFileList({ files, selectedFile, onOpen, onRevert }: P
     setContextMenu({ x: e.clientX, y: e.clientY, path });
   };
 
+  const isMultiRevert = contextMenu !== null && selectedCount > 1 && selectedFiles.has(contextMenu.path);
+
   return (
     <>
       <ul className="py-1">
@@ -42,10 +45,10 @@ export default function GitFileList({ files, selectedFile, onOpen, onRevert }: P
           <li key={f.path}>
             <button
               className={`w-full flex items-center gap-1.5 px-3 py-0.5 text-left min-w-0 group
-                ${f.path === selectedFile
+                ${selectedFiles.has(f.path)
                   ? 'bg-primary/15 hover:bg-primary/20'
                   : 'hover:bg-base-300'}`}
-              onClick={() => onOpen(f.path)}
+              onClick={e => onFileClick(f.path, e.shiftKey)}
               onContextMenu={e => handleContextMenu(e, f.path)}
             >
               <GitStatusBadge indexStatus={f.indexStatus} worktreeStatus={f.worktreeStatus} untracked={f.untracked} />
@@ -75,7 +78,7 @@ export default function GitFileList({ files, selectedFile, onOpen, onRevert }: P
             onClick={() => { onRevert(contextMenu.path, false); setContextMenu(null); }}
           >
             <RotateCcw size={11} />
-            Revert file
+            {isMultiRevert ? `Revert ${selectedCount} files` : 'Revert file'}
           </button>
         </div>
       )}

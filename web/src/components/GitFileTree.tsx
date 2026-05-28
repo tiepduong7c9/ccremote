@@ -12,8 +12,9 @@ interface ContextMenuState {
 
 interface Props {
   files: GitFileChange[];
-  selectedFile: string | null;
-  onOpen: (path: string) => void;
+  selectedFiles: Set<string>;
+  selectedCount: number;
+  onFileClick: (path: string, shiftKey: boolean) => void;
   onRevert: (path: string, isFolder: boolean) => void;
   collapseRevision?: number;
 }
@@ -42,11 +43,11 @@ function buildTree(files: GitFileChange[]): TreeNode {
   return root;
 }
 
-function TreeNodeRow({ node, depth, selectedFile, onOpen, onContextMenu, collapseRevision }: {
+function TreeNodeRow({ node, depth, selectedFiles, onFileClick, onContextMenu, collapseRevision }: {
   node: TreeNode;
   depth: number;
-  selectedFile: string | null;
-  onOpen: (path: string) => void;
+  selectedFiles: Set<string>;
+  onFileClick: (path: string, shiftKey: boolean) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isFolder: boolean) => void;
   collapseRevision?: number;
 }) {
@@ -71,19 +72,19 @@ function TreeNodeRow({ node, depth, selectedFile, onOpen, onContextMenu, collaps
           <span className="font-mono text-xs text-base-content/60 truncate">{node.name}/</span>
         </button>
         {open && Array.from(node.children.values()).map(child => (
-          <TreeNodeRow key={child.fullPath} node={child} depth={depth + 1} selectedFile={selectedFile} onOpen={onOpen} onContextMenu={onContextMenu} collapseRevision={collapseRevision} />
+          <TreeNodeRow key={child.fullPath} node={child} depth={depth + 1} selectedFiles={selectedFiles} onFileClick={onFileClick} onContextMenu={onContextMenu} collapseRevision={collapseRevision} />
         ))}
       </>
     );
   }
 
-  const isSelected = node.file?.path === selectedFile;
+  const isSelected = node.file ? selectedFiles.has(node.file.path) : false;
   return (
     <button
       className={`w-full flex items-center gap-1.5 py-0.5 text-left min-w-0 group
         ${isSelected ? 'bg-primary/15 hover:bg-primary/20' : 'hover:bg-base-300'}`}
       style={{ paddingLeft: `${8 + depth * 12}px` }}
-      onClick={() => node.file && onOpen(node.file.path)}
+      onClick={e => node.file && onFileClick(node.file.path, e.shiftKey)}
       onContextMenu={e => onContextMenu(e, node.fullPath, false)}
     >
       {node.file && (
@@ -94,7 +95,7 @@ function TreeNodeRow({ node, depth, selectedFile, onOpen, onContextMenu, collaps
   );
 }
 
-export default function GitFileTree({ files, selectedFile, onOpen, onRevert, collapseRevision }: Props) {
+export default function GitFileTree({ files, selectedFiles, selectedCount, onFileClick, onRevert, collapseRevision }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -113,13 +114,15 @@ export default function GitFileTree({ files, selectedFile, onOpen, onRevert, col
     setContextMenu({ x: e.clientX, y: e.clientY, path, isFolder });
   };
 
+  const isMultiRevert = contextMenu !== null && !contextMenu.isFolder && selectedCount > 1 && selectedFiles.has(contextMenu.path);
+
   const root = buildTree(files);
   return (
     <>
       <ul className="py-1">
         {Array.from(root.children.values()).map(child => (
           <li key={child.fullPath}>
-            <TreeNodeRow node={child} depth={0} selectedFile={selectedFile} onOpen={onOpen} onContextMenu={handleContextMenu} collapseRevision={collapseRevision} />
+            <TreeNodeRow node={child} depth={0} selectedFiles={selectedFiles} onFileClick={onFileClick} onContextMenu={handleContextMenu} collapseRevision={collapseRevision} />
           </li>
         ))}
       </ul>
@@ -135,7 +138,7 @@ export default function GitFileTree({ files, selectedFile, onOpen, onRevert, col
             onClick={() => { onRevert(contextMenu.path, contextMenu.isFolder); setContextMenu(null); }}
           >
             <RotateCcw size={11} />
-            {contextMenu.isFolder ? 'Revert folder' : 'Revert file'}
+            {isMultiRevert ? `Revert ${selectedCount} files` : contextMenu.isFolder ? 'Revert folder' : 'Revert file'}
           </button>
         </div>
       )}
