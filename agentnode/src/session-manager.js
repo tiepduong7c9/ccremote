@@ -5,7 +5,6 @@ const { nanoid } = require('nanoid');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { randomUUID } = require('crypto');
 const { STATE_DIR, SESSIONS_FILE } = require('./constants');
 
 const MAX_SCROLLBACK = 100 * 1024; // 100 KB per session
@@ -82,15 +81,7 @@ class SessionManager {
     const parentSid = opts.parentSid || null;
     const transient = opts.transient || false;
 
-    // For claude sessions, pin a UUID so we can resume this exact conversation
-    // later with `claude --resume <claudeSessionId>`, regardless of how many
-    // other claude sessions exist in the same directory.
-    const claudeSessionId = command === 'claude' ? randomUUID() : null;
-    const spawnArgs = claudeSessionId
-      ? [...args, '--session-id', claudeSessionId]
-      : args;
-
-    const ptyProc = pty.spawn(command, spawnArgs, {
+    const ptyProc = pty.spawn(command, args, {
       name: 'xterm-256color',
       cols: opts.cols || 220,
       rows: opts.rows || 50,
@@ -104,7 +95,6 @@ class SessionManager {
       cwd,
       command,
       args,
-      ...(claudeSessionId && { claudeSessionId }),
       ...(parentSid && { parentSid }),
       ...(transient && { transient }),
       pid: ptyProc.pid,
@@ -160,9 +150,7 @@ class SessionManager {
     // For other commands: restart with the original args.
     let resumeArgs;
     if (meta.command === 'claude') {
-      resumeArgs = meta.claudeSessionId
-        ? ['--resume', meta.claudeSessionId]
-        : ['--continue'];
+      resumeArgs = ['--continue'];
     } else {
       resumeArgs = meta.args || [];
     }
