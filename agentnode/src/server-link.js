@@ -156,7 +156,10 @@ class ServerLink {
 
         this._attachments.set(aid, { sid: meta.id, listener });
 
-        if (result.scrollback && result.scrollback.length > 0) {
+        // Only replay scrollback for bash/transient sessions. For Claude sessions the
+        // browser sends a double SIGWINCH after 'attached' which forces a clean TUI
+        // re-render — sending raw scrollback bytes on top of that causes duplicate history.
+        if (result.scrollback && result.scrollback.length > 0 && result.meta.transient) {
           this._send({ type: 'scrollback', aid, sid: meta.id, data: result.scrollback.toString('base64') });
         }
         this._send({ type: 'attached', aid, sid: meta.id, session: result.meta });
