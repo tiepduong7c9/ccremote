@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, AlertCircle, BinaryIcon, FileWarning } from 'lucide-react';
+import { X, AlertCircle, BinaryIcon, FileWarning, ArrowUp, ArrowDown } from 'lucide-react';
 import { DiffEditor, type DiffOnMount } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import { useGitStore } from '../git-store';
@@ -79,9 +79,29 @@ export default function DiffModal({ anid, cwd, filePath, onClose }: Props) {
           style={{ height: HEADER_H }}
         >
           <span className="font-mono text-sm truncate text-base-content/80">{filePath}</span>
-          <button className="btn btn-xs btn-ghost ml-2 shrink-0" onClick={onClose} title="Close (Esc)">
-            <X size={14} />
-          </button>
+          <div className="flex items-center gap-1 ml-2 shrink-0">
+            {ready && (
+              <>
+                <button
+                  className="btn btn-xs btn-ghost"
+                  title="Previous change"
+                  onClick={() => editorRef.current?.goToDiff('previous')}
+                >
+                  <ArrowUp size={14} />
+                </button>
+                <button
+                  className="btn btn-xs btn-ghost"
+                  title="Next change"
+                  onClick={() => editorRef.current?.goToDiff('next')}
+                >
+                  <ArrowDown size={14} />
+                </button>
+              </>
+            )}
+            <button className="btn btn-xs btn-ghost ml-2" onClick={onClose} title="Close (Esc)">
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Body — explicit pixel height so Monaco height="100%" works */}
