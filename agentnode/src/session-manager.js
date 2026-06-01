@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { STATE_DIR, SESSIONS_FILE } = require('./constants');
 
-const MAX_SCROLLBACK = 100 * 1024; // 100 KB per session
+const MAX_SCROLLBACK = 500 * 1024; // 500 KB per session
 
 // Absolute path to the hook script — written into .claude/settings.local.json
 const HOOK_COMMAND = `node ${path.join(__dirname, 'hook.js')}`;

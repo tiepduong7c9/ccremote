@@ -29,6 +29,7 @@ export default function TerminalPanel({ anid, sid, visible = true }: Props) {
       cursorBlink: true,
       fontFamily: 'monospace',
       fontSize: 14,
+      scrollback: 10000, // default is 1000; raise so long live output isn't truncated
       theme: { background: '#1e1e2e', foreground: '#cdd6f4' },
     });
     const fitAddon = new FitAddon();
