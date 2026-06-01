@@ -54,7 +54,7 @@ export type ServerMsg =
   | { type: 'agentnode_offline'; anid: string }
   | { type: 'sessions'; anid: string; sessions: SessionMeta[] }
   | { type: 'attached'; anid: string; aid: string; sid: string; session: SessionMeta }
-  | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string }
+  | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string; redraw?: boolean }
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
   | { type: 'session_exit'; anid: string; sid: string; code: number }
   | { type: 'image_uploaded'; anid: string; aid: string; path: string }

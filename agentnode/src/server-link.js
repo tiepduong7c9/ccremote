@@ -156,11 +156,20 @@ class ServerLink {
 
         this._attachments.set(aid, { sid: meta.id, listener });
 
-        // Only replay scrollback for bash/transient sessions. For Claude sessions the
-        // browser sends a double SIGWINCH after 'attached' which forces a clean TUI
-        // re-render — sending raw scrollback bytes on top of that causes duplicate history.
-        if (result.scrollback && result.scrollback.length > 0 && result.meta.transient) {
-          this._send({ type: 'scrollback', aid, sid: meta.id, data: result.scrollback.toString('base64') });
+        // Replay scrollback so the browser has prior history to scroll back through.
+        // For Claude sessions the browser also sends a double SIGWINCH after 'attached'
+        // which makes Claude repaint a fresh frame; replaying raw bytes on top of that
+        // caused duplicate history. The `redraw` flag tells the browser to bury the
+        // replayed frame into scrollback before that repaint, so the live frame appears
+        // exactly once. Transient (bash) sessions get no redraw, so no burying needed.
+        if (result.scrollback && result.scrollback.length > 0) {
+          this._send({
+            type: 'scrollback',
+            aid,
+            sid: meta.id,
+            data: result.scrollback.toString('base64'),
+            redraw: !result.meta.transient,
+          });
         }
         this._send({ type: 'attached', aid, sid: meta.id, session: result.meta });
         break;

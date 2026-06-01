@@ -142,7 +142,17 @@ class BrowserSocket {
 
       case 'scrollback': {
         const term = this.termsByAid.get(msg.aid);
-        if (term) term.write(b64ToBytes(msg.data));
+        if (term) {
+          term.write(b64ToBytes(msg.data));
+          // For Claude sessions the imminent SIGWINCH makes Claude repaint a fresh
+          // frame. Push the replayed content up into the scrollback buffer first so
+          // that repaint lands on a clean viewport instead of appending below the
+          // replayed frame (which is what produced duplicate history). The prior
+          // history stays scrollable; only an extra blank screen separates it.
+          if (msg.redraw) {
+            term.write(`\x1b[${term.rows};1H` + '\n'.repeat(term.rows));
+          }
+        }
         break;
       }
 
