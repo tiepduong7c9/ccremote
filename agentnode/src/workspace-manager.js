@@ -328,6 +328,13 @@ class WorkspaceManager {
     fs.rmSync(fullPath, { recursive: true, force: true });
   }
 
+  async injectSkill(cwd, name, content) {
+    // Sanitize the skill name into a single safe directory segment
+    const safe = String(name || '').trim().replace(/[\/\\]/g, '-').replace(/\.\.+/g, '.').replace(/^\.+/, '');
+    if (!safe) throw new Error('Invalid skill name');
+    await this.writeFile(cwd, path.join('.claude', 'skills', safe, 'SKILL.md'), content || '');
+  }
+
   uploadFileChunk(cwd, filePath, index, total, base64, aid) {
     const abs = resolvePath(cwd);
     const fullPath = path.resolve(abs, filePath);

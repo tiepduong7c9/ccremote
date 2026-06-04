@@ -1,8 +1,9 @@
 'use strict';
 
 class BrowserHub {
-  constructor(agentnodeHub) {
+  constructor(agentnodeHub, skillStore) {
     this._hub = agentnodeHub;
+    this._skillStore = skillStore || null;
     this.browsers = new Set();
     // aid -> { ws, anid, sid }
     this.attachments = new Map();
@@ -116,6 +117,18 @@ class BrowserHub {
         this._hub.send(anid, msg);
         break;
 
+      case 'skill_inject': {
+        // Library lives on the server — enrich the relay with the skill body
+        const skill = this._skillStore && this._skillStore.findById(msg.skillId);
+        if (!skill) {
+          this._sendTo(ws, { type: 'server_error', aid, message: 'Skill not found' });
+          break;
+        }
+        this._gitRequests.set(msg.aid, ws);
+        this._hub.send(anid, { type: 'skill_inject', aid, cwd: msg.cwd, name: skill.name, content: skill.content });
+        break;
+      }
+
       default:
         this._sendTo(ws, { type: 'server_error', message: `Unknown message type: ${msg.type}` });
     }
@@ -132,7 +145,7 @@ class BrowserHub {
       return;
     }
 
-    if (msg.type === 'git_repos' || msg.type === 'git_result' || msg.type === 'git_status_result' || msg.type === 'git_diff_result' || msg.type === 'git_pull_result' || msg.type === 'git_revert_result' || msg.type === 'git_log_result' || msg.type === 'git_branches_result' || msg.type === 'git_checkout_result' || msg.type === 'file_list_result' || msg.type === 'file_list_dir_result' || msg.type === 'file_read_result' || msg.type === 'file_write_result' || msg.type === 'file_delete_result' || msg.type === 'file_upload_result' || msg.type === 'claude_md_read_result' || msg.type === 'claude_md_write_result') {
+    if (msg.type === 'git_repos' || msg.type === 'git_result' || msg.type === 'git_status_result' || msg.type === 'git_diff_result' || msg.type === 'git_pull_result' || msg.type === 'git_revert_result' || msg.type === 'git_log_result' || msg.type === 'git_branches_result' || msg.type === 'git_checkout_result' || msg.type === 'file_list_result' || msg.type === 'file_list_dir_result' || msg.type === 'file_read_result' || msg.type === 'file_write_result' || msg.type === 'file_delete_result' || msg.type === 'file_upload_result' || msg.type === 'claude_md_read_result' || msg.type === 'claude_md_write_result' || msg.type === 'skill_inject_result') {
       const ws = this._gitRequests.get(msg.aid);
       if (ws) {
         this._sendTo(ws, { ...msg, anid });

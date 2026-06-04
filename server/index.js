@@ -6,6 +6,7 @@ const Fastify = require('fastify');
 const { PORT, HOST, staticDir } = require('./config');
 const { registerAuth } = require('./auth');
 const AgentnodeStore = require('./store');
+const SkillStore = require('./skill-store');
 const AgentnodeHub = require('./agentnode-hub');
 const BrowserHub = require('./browser-hub');
 
@@ -19,12 +20,14 @@ async function start() {
   await registerAuth(fastify);
 
   const store = new AgentnodeStore();
+  const skillStore = new SkillStore();
   const agentnodeHub = new AgentnodeHub();
-  const browserHub = new BrowserHub(agentnodeHub);
+  const browserHub = new BrowserHub(agentnodeHub, skillStore);
 
   // HTTP routes
   await fastify.register(require('./routes/auth'));
   await fastify.register(require('./routes/agentnodes'), { store, agentnodeHub });
+  await fastify.register(require('./routes/skills'), { skillStore });
 
   // WS routes
   await fastify.register(require('./ws/agentnode-ws'), { store, agentnodeHub });

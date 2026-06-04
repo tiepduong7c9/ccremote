@@ -64,6 +64,7 @@ class BrowserSocket {
   private gitBranchesCallbacks: Map<string, (branches: string[] | null, error?: string) => void> = new Map();
   private gitCheckoutCallbacks: Map<string, (error?: string) => void> = new Map();
   private gitLogCallbacks: Map<string, (commits: GitCommit[] | null, error?: string) => void> = new Map();
+  private skillInjectCallbacks: Map<string, (error?: string) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -221,7 +222,9 @@ class BrowserSocket {
         const claudeMdReadCb = this.claudeMdReadCallbacks.get(msg.aid);
         if (claudeMdReadCb) { claudeMdReadCb(null, msg.message); this.claudeMdReadCallbacks.delete(msg.aid); break; }
         const claudeMdWriteCb = this.claudeMdWriteCallbacks.get(msg.aid);
-        if (claudeMdWriteCb) { claudeMdWriteCb(msg.message); this.claudeMdWriteCallbacks.delete(msg.aid); }
+        if (claudeMdWriteCb) { claudeMdWriteCb(msg.message); this.claudeMdWriteCallbacks.delete(msg.aid); break; }
+        const skillInjectCb = this.skillInjectCallbacks.get(msg.aid);
+        if (skillInjectCb) { skillInjectCb(msg.message); this.skillInjectCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -348,6 +351,12 @@ class BrowserSocket {
         break;
       }
 
+      case 'skill_inject_result': {
+        const cb = this.skillInjectCallbacks.get(msg.aid);
+        if (cb) { cb(); this.skillInjectCallbacks.delete(msg.aid); }
+        break;
+      }
+
       case 'server_error': {
         console.error('[ccremote]', msg.message);
         const errAid = msg.aid;
@@ -386,6 +395,8 @@ class BrowserSocket {
           if (claudeMdReadCb) { claudeMdReadCb(null, msg.message); this.claudeMdReadCallbacks.delete(errAid); }
           const claudeMdWriteCb = this.claudeMdWriteCallbacks.get(errAid);
           if (claudeMdWriteCb) { claudeMdWriteCb(msg.message); this.claudeMdWriteCallbacks.delete(errAid); }
+          const skillInjectCb = this.skillInjectCallbacks.get(errAid);
+          if (skillInjectCb) { skillInjectCb(msg.message); this.skillInjectCallbacks.delete(errAid); }
         }
         break;
       }
@@ -564,6 +575,11 @@ class BrowserSocket {
   fileDelete(anid: string, aid: string, cwd: string, filePath: string, cb: (error?: string) => void) {
     this.fileDeleteCallbacks.set(aid, cb);
     this.send({ type: 'file_delete', anid, aid, cwd, path: filePath });
+  }
+
+  skillInject(anid: string, aid: string, cwd: string, skillId: string, cb: (error?: string) => void) {
+    this.skillInjectCallbacks.set(aid, cb);
+    this.send({ type: 'skill_inject', anid, aid, cwd, skillId });
   }
 
   fileDownload(anid: string, aid: string, cwd: string, filePath: string, cb: (result: { chunks: string[]; size: number } | null, error?: string) => void, onProgress?: (percent: number) => void) {

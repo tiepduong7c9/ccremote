@@ -36,5 +36,6 @@ const HOST = process.env.CCREMOTE_HOST || '0.0.0.0';
 const WEB_PASSWORD = process.env.CCREMOTE_WEB_PASSWORD || '';
 const staticDir = path.resolve(__dirname, '../web/dist');
 const agentnodesFile = path.join(dataDir, 'agentnodes.json');
+const skillsFile = path.join(dataDir, 'skills.json');
 
-module.exports = { PORT, HOST, WEB_PASSWORD, getCookieSecret, staticDir, agentnodesFile, dataDir };
+module.exports = { PORT, HOST, WEB_PASSWORD, getCookieSecret, staticDir, agentnodesFile, skillsFile, dataDir };
