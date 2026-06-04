@@ -79,6 +79,7 @@ class AgentnodeHub extends EventEmitter {
       case 'file_upload_result':
       case 'claude_md_read_result':
       case 'claude_md_write_result':
+      case 'skill_inject_result':
       case 'file_download_chunk':
         this.emit('relay', { anid: record.id, msg });
         break;

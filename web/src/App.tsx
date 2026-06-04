@@ -8,13 +8,15 @@ import ThemeToggle from './components/ThemeToggle';
 import NotificationToggle from './components/NotificationToggle';
 import RightPanel from './components/RightPanel';
 import FileSearchModal from './components/FileSearchModal';
-import { Folder, TerminalSquare, ChevronRight } from 'lucide-react';
+import SkillsManagerModal from './components/SkillsManagerModal';
+import { Folder, TerminalSquare, ChevronRight, Wand2 } from 'lucide-react';
 
 export default function App() {
   const { authed, check } = useAuthStore();
   const { selectedAnid, selectedSid, select, agentnodes } = useRegistryStore();
   const { toasts, removeToast } = useToastStore();
   const [showFileSearch, setShowFileSearch] = useState(false);
+  const [showSkills, setShowSkills] = useState(false);
 
   const session = selectedAnid && selectedSid
     ? agentnodes.get(selectedAnid)?.sessions.find(s => s.id === selectedSid)
@@ -82,6 +84,13 @@ export default function App() {
             </div>
           )}
           <div className="flex items-center gap-0.5 shrink-0">
+            <button
+              className="btn btn-ghost btn-sm gap-1"
+              onClick={() => setShowSkills(true)}
+              title="Skill library"
+            >
+              <Wand2 size={15} /> Skills
+            </button>
             <NotificationToggle />
             <ThemeToggle />
           </div>
@@ -106,6 +115,7 @@ export default function App() {
           onClose={() => setShowFileSearch(false)}
         />
       )}
+      {showSkills && <SkillsManagerModal onClose={() => setShowSkills(false)} />}
       {toasts.length > 0 && (
         <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50 pointer-events-none">
           {toasts.map(t => (

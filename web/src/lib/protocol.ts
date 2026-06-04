@@ -39,6 +39,15 @@ export interface SessionMeta {
   lastAttachedAt: string | null;
 }
 
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AgentnodeView {
   id: string;
   name: string;
@@ -76,10 +85,11 @@ export type ServerMsg =
   | { type: 'file_upload_result'; anid: string; aid: string; path: string }
   | { type: 'claude_md_read_result'; anid: string; aid: string; content: string }
   | { type: 'claude_md_write_result'; anid: string; aid: string }
+  | { type: 'skill_inject_result'; anid: string; aid: string; name: string }
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
   anid: string;
   aid?: string;
   sid?: string;
@@ -102,4 +112,5 @@ export type BrowserMsg = {
   total?: number;
   size?: number;
   base64?: string;
+  skillId?: string;
 };

@@ -484,6 +484,14 @@ class ServerLink {
         break;
       }
 
+      case 'skill_inject': {
+        const { aid, cwd, name, content } = msg;
+        this._git.injectSkill(cwd, name, content)
+          .then(() => this._send({ type: 'skill_inject_result', aid, name }))
+          .catch(err => this._send({ type: 'git_result', aid, success: false, message: err.message }));
+        break;
+      }
+
       default:
         break;
     }

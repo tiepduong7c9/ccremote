@@ -3,6 +3,7 @@ import { ChevronRight, ChevronLeft } from 'lucide-react';
 import { useGitStore } from '../git-store';
 import GitChangesTab from './GitChangesTab';
 import FileTreePanel from './FileTreePanel';
+import SkillsTab from './SkillsTab';
 
 interface Props {
   anid: string;
@@ -10,7 +11,7 @@ interface Props {
   cwd: string;
 }
 
-type Tab = 'changes' | 'files';
+type Tab = 'changes' | 'files' | 'skills';
 
 export default function RightPanel({ anid, sid, cwd }: Props) {
   const { panelCollapsed, setPanelCollapsed } = useGitStore();
@@ -46,6 +47,12 @@ export default function RightPanel({ anid, sid, cwd }: Props) {
         >
           Files
         </button>
+        <button
+          className={`text-xs font-semibold px-1.5 py-0.5 rounded transition-colors ${activeTab === 'skills' ? 'bg-base-300 text-base-content' : 'text-base-content/50 hover:text-base-content/80'}`}
+          onClick={() => setActiveTab('skills')}
+        >
+          Skills
+        </button>
         <div className="flex-1" />
         <button
           className="btn btn-xs btn-ghost p-0 w-6 h-6"
@@ -59,6 +66,7 @@ export default function RightPanel({ anid, sid, cwd }: Props) {
       {/* Tab content */}
       {activeTab === 'changes' && <GitChangesTab anid={anid} sid={sid} cwd={cwd} />}
       {activeTab === 'files' && <FileTreePanel anid={anid} cwd={cwd} />}
+      {activeTab === 'skills' && <SkillsTab anid={anid} cwd={cwd} />}
     </div>
   );
 }
