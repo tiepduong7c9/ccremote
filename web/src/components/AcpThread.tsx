@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen } from 'lucide-react';
+import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen, X } from 'lucide-react';
 import { browserSocket } from '../ws';
 import { useTerminalStore } from '../store';
 import { useAcpStore } from '../acp-store';
-import type { AcpContentBlock, AcpConversation, AcpEvent, AcpModeState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent } from '../lib/protocol';
+import type { AcpAccount, AcpCommand, AcpContentBlock, AcpConversation, AcpEvent, AcpModeState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent, AcpUsageData, AcpUsageWindow } from '../lib/protocol';
 
 // Claude brand coral, used for the focus ring and send button (matches the
 // Claude Code GUI). Kept as a literal so Tailwind's JIT emits the classes.
@@ -276,6 +276,92 @@ function ChatHeader({ anid, sid, aid }: { anid: string; sid: string; aid: string
   );
 }
 
+function fmtResets(iso?: string): string {
+  if (!iso) return '';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return 'Resets now';
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `Resets in ${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `Resets in ${h}h`;
+  return `Resets in ${Math.floor(h / 24)}d`;
+}
+const planLabel = (t?: string) => (t ? `Claude ${t.charAt(0).toUpperCase()}${t.slice(1)}` : '—');
+const authLabel = (m?: string) => (!m ? '—' : m === 'claude.ai' ? 'Claude AI' : m);
+
+function UsageBar({ label, win }: { label: string; win?: AcpUsageWindow | null }) {
+  if (!win) return null;
+  const pct = Math.max(0, Math.min(100, Math.round(win.utilization)));
+  return (
+    <div className="mt-3">
+      <div className="flex justify-between text-sm"><span>{label}</span><span className="tabular-nums">{pct}%</span></div>
+      <div className="mt-1 h-1.5 rounded-full bg-base-300 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CORAL }} />
+      </div>
+      <div className="text-[11px] text-base-content/40 mt-0.5">{fmtResets(win.resets_at)}</div>
+    </div>
+  );
+}
+
+function AccountRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between gap-4 py-1.5 text-sm border-b border-base-200 last:border-0">
+      <span className="text-base-content/50 shrink-0">{k}</span>
+      <span className="font-medium text-right truncate">{v}</span>
+    </div>
+  );
+}
+
+function UsageModal({ anid, aid, onClose }: { anid: string; aid: string; onClose: () => void }) {
+  const [detail, setDetail] = useState<{ account: AcpAccount | null; usage: AcpUsageData | null } | null>(null);
+  useEffect(() => { browserSocket.acpUsageDetail(anid, aid, setDetail); }, [anid, aid]);
+  const acc = detail?.account;
+  const usage = detail?.usage;
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box max-w-md">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-lg">Account &amp; Usage</h3>
+          <button className="btn btn-sm btn-ghost btn-circle" onClick={onClose}><X size={16} /></button>
+        </div>
+        {!detail ? (
+          <div className="py-12 flex justify-center"><span className="loading loading-spinner" /></div>
+        ) : (
+          <div className="mt-3">
+            <div className="text-[11px] uppercase tracking-wider text-base-content/40 font-semibold mb-1">Account</div>
+            <AccountRow k="Auth method" v={authLabel(acc?.authMethod)} />
+            <AccountRow k="Email" v={acc?.email ?? '—'} />
+            <AccountRow k="Organization" v={acc?.orgName ?? '—'} />
+            <AccountRow k="Plan" v={planLabel(acc?.subscriptionType)} />
+
+            <div className="text-[11px] uppercase tracking-wider text-base-content/40 font-semibold mt-5">Usage</div>
+            {usage ? (
+              <>
+                <UsageBar label="Session (5hr)" win={usage.five_hour} />
+                <UsageBar label="Weekly (7 day)" win={usage.seven_day} />
+                <UsageBar label="Weekly Opus" win={usage.seven_day_opus} />
+                <UsageBar label="Weekly Sonnet" win={usage.seven_day_sonnet} />
+                {usage.extra_usage && usage.extra_usage.used_credits > 0 && (
+                  <div className="mt-3 text-sm flex justify-between">
+                    <span>Extra usage</span>
+                    <span>{usage.extra_usage.used_credits} {usage.extra_usage.currency}</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-sm text-base-content/50 mt-2">Usage data unavailable.</div>
+            )}
+            <a className="mt-5 inline-block text-sm" style={{ color: CORAL }} href="https://claude.ai/settings/usage" target="_blank" rel="noreferrer">
+              Manage usage on claude.ai
+            </a>
+          </div>
+        )}
+      </div>
+      <div className="modal-backdrop" onClick={onClose} />
+    </div>
+  );
+}
+
 export default function AcpThread({ anid, sid, visible = true }: Props) {
   const aidRef = useRef<string>(nanoid(8));
   const setAttachment = useTerminalStore(s => s.setAttachment);
@@ -285,8 +371,21 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const setModeLocal = useAcpStore(s => s.setModeLocal);
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
+  const [cmdIndex, setCmdIndex] = useState(0);
+  const [cmdDismissed, setCmdDismissed] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Slash-command palette: active only while the draft is a bare "/word" token.
+  const commands = thread?.availableCommands ?? [];
+  const slashQuery = /^\/([^\s]*)$/.exec(draft)?.[1];
+  const cmdMatches = useMemo(() => {
+    if (slashQuery === undefined) return [];
+    const q = slashQuery.toLowerCase();
+    return commands.filter(c => c.name.toLowerCase().startsWith(q)).slice(0, 8);
+  }, [slashQuery, commands]);
+  const showPalette = cmdMatches.length > 0 && !cmdDismissed;
 
   // Grow the textarea with its content (up to a cap), like the Claude Code GUI.
   const autoGrow = (el: HTMLTextAreaElement | null) => {
@@ -317,11 +416,30 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     if (visible) taRef.current?.focus();
   }, [visible]);
 
+  useEffect(() => { setCmdIndex(0); }, [slashQuery]);
+
   const send = () => {
     const text = draft.trim();
     if (!text) return;
+    // /usage has no chat output over ACP — show the rich popup instead.
+    if (text === '/usage') { setShowUsage(true); setDraft(''); return; }
     browserSocket.acpPrompt(anid, aidRef.current, [{ type: 'text', text }]);
     setDraft('');
+  };
+
+  const acceptCommand = (cmd: AcpCommand) => {
+    setCmdDismissed(true);
+    if (cmd.name === 'usage') { setShowUsage(true); setDraft(''); return; }
+    if (cmd.input?.hint) {
+      // Command takes arguments — drop "/name " in the box so the user can type them.
+      setDraft(`/${cmd.name} `);
+      requestAnimationFrame(() => { const el = taRef.current; if (el) { el.focus(); autoGrow(el); } });
+    } else {
+      // No arguments — run it right away.
+      browserSocket.acpPrompt(anid, aidRef.current, [{ type: 'text', text: `/${cmd.name}` }]);
+      setDraft('');
+      requestAnimationFrame(() => { const el = taRef.current; if (el) { el.style.height = 'auto'; el.focus(); } });
+    }
   };
 
   const answerPermission = (requestId: string, optionId: string | null) => {
@@ -448,9 +566,28 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
             </div>
           )}
           <div
-            className="rounded-2xl border border-base-300 bg-base-100 transition-shadow"
+            className="relative rounded-2xl border border-base-300 bg-base-100 transition-shadow"
             style={focused ? { borderColor: CORAL, boxShadow: `0 0 0 3px ${CORAL}22` } : undefined}
           >
+            {showPalette && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-base-100 border border-base-300 rounded-xl shadow-lg overflow-hidden py-1 max-h-72 overflow-y-auto z-30">
+                <div className="px-3 py-1 text-[11px] uppercase tracking-wider text-base-content/40 font-semibold">Commands</div>
+                {cmdMatches.map((c, i) => (
+                  <button
+                    key={c.name}
+                    type="button"
+                    className={`w-full text-left px-3 py-1.5 transition-colors ${i === cmdIndex ? 'bg-base-200' : 'hover:bg-base-200'}`}
+                    onMouseDown={e => { e.preventDefault(); acceptCommand(c); }}
+                    onMouseEnter={() => setCmdIndex(i)}
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-medium" style={{ color: CORAL }}>/{c.name}</span>
+                      <span className="text-xs text-base-content/50 truncate">{c.description}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               ref={taRef}
               className="w-full bg-transparent resize-none outline-none text-sm px-4 pt-3 pb-1.5 leading-relaxed"
@@ -460,8 +597,14 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
               placeholder="Reply to Claude…"
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
-              onChange={e => { setDraft(e.target.value); autoGrow(e.target); }}
+              onChange={e => { setDraft(e.target.value); setCmdDismissed(false); autoGrow(e.target); }}
               onKeyDown={e => {
+                if (showPalette) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex(i => (i + 1) % cmdMatches.length); return; }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex(i => (i - 1 + cmdMatches.length) % cmdMatches.length); return; }
+                  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acceptCommand(cmdMatches[cmdIndex] || cmdMatches[0]); return; }
+                  if (e.key === 'Escape') { e.preventDefault(); setCmdDismissed(true); return; }
+                }
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
               }}
             />
@@ -494,6 +637,8 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
           </div>
         </div>
       </div>
+
+      {showUsage && <UsageModal anid={anid} aid={aidRef.current} onClose={() => setShowUsage(false)} />}
     </div>
   );
 }

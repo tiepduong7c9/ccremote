@@ -86,6 +86,7 @@ class BrowserHub {
       case 'acp_list_conversations':
       case 'acp_new_conversation':
       case 'acp_resume_conversation':
+      case 'acp_usage_detail':
         this._hub.send(anid, msg);
         break;
 

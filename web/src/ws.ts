@@ -13,7 +13,7 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   }
   return btoa(binary);
 }
-import type { AcpConversation, GitCommit, GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
+import type { AcpAccount, AcpConversation, AcpUsageData, GitCommit, GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
 import { notificationsEnabled } from './lib/notifications';
 import { useRegistryStore, useTerminalStore, useToastStore } from './store';
 import { useAcpStore } from './acp-store';
@@ -68,6 +68,7 @@ class BrowserSocket {
   private gitLogCallbacks: Map<string, (commits: GitCommit[] | null, error?: string) => void> = new Map();
   private skillInjectCallbacks: Map<string, (error?: string) => void> = new Map();
   private acpConvCallbacks: Map<string, (conversations: AcpConversation[]) => void> = new Map();
+  private acpUsageCallbacks: Map<string, (detail: { account: AcpAccount | null; usage: AcpUsageData | null }) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -168,7 +169,7 @@ class BrowserSocket {
       }
 
       case 'acp_history':
-        useAcpStore.getState().setHistory(msg.sid, msg.events, msg.claudeStatus, msg.acpSessionId, msg.modeState);
+        useAcpStore.getState().setHistory(msg.sid, msg.events, msg.claudeStatus, msg.acpSessionId, msg.modeState, msg.availableCommands);
         break;
 
       case 'acp_event':
@@ -178,6 +179,12 @@ class BrowserSocket {
       case 'acp_conversations_result': {
         const cb = this.acpConvCallbacks.get(msg.aid);
         if (cb) { cb(msg.conversations); this.acpConvCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'acp_usage_detail_result': {
+        const cb = this.acpUsageCallbacks.get(msg.aid);
+        if (cb) { cb({ account: msg.account, usage: msg.usage }); this.acpUsageCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -519,6 +526,11 @@ class BrowserSocket {
 
   acpResumeConversation(anid: string, aid: string, sessionId: string) {
     this.send({ type: 'acp_resume_conversation', anid, aid, sessionId });
+  }
+
+  acpUsageDetail(anid: string, aid: string, cb: (detail: { account: AcpAccount | null; usage: AcpUsageData | null }) => void) {
+    this.acpUsageCallbacks.set(aid, cb);
+    this.send({ type: 'acp_usage_detail', anid, aid });
   }
 
   kill(anid: string, sid: string) {

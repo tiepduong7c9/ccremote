@@ -1,18 +1,19 @@
 import { create } from 'zustand';
-import type { AcpEvent, AcpModeState } from './lib/protocol';
+import type { AcpCommand, AcpEvent, AcpModeState } from './lib/protocol';
 
 export interface AcpThreadState {
   events: AcpEvent[];
   claudeStatus?: 'working' | 'waiting' | 'idle';
   acpSessionId: string | null;
   modeState?: AcpModeState | null;
+  availableCommands?: AcpCommand[];
   lastSeq: number; // highest event seq applied — used to dedupe fan-out
 }
 
 interface AcpStore {
   // keyed by session id (sid)
   threads: Map<string, AcpThreadState>;
-  setHistory: (sid: string, events: AcpEvent[], claudeStatus: AcpThreadState['claudeStatus'], acpSessionId: string | null, modeState?: AcpModeState | null) => void;
+  setHistory: (sid: string, events: AcpEvent[], claudeStatus: AcpThreadState['claudeStatus'], acpSessionId: string | null, modeState?: AcpModeState | null, availableCommands?: AcpCommand[]) => void;
   appendEvent: (sid: string, event: AcpEvent) => void;
   resolvePermissionLocal: (sid: string, requestId: string, optionId: string | null) => void;
   setModeLocal: (sid: string, modeId: string) => void;
@@ -22,10 +23,10 @@ interface AcpStore {
 export const useAcpStore = create<AcpStore>((set) => ({
   threads: new Map(),
 
-  setHistory: (sid, events, claudeStatus, acpSessionId, modeState) => set((s) => {
+  setHistory: (sid, events, claudeStatus, acpSessionId, modeState, availableCommands) => set((s) => {
     const threads = new Map(s.threads);
     const lastSeq = events.reduce((m, e) => (typeof e.seq === 'number' && e.seq > m ? e.seq : m), -1);
-    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, lastSeq });
+    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, availableCommands: availableCommands ?? [], lastSeq });
     return { threads };
   }),
 
@@ -39,6 +40,10 @@ export const useAcpStore = create<AcpStore>((set) => ({
     }
     if (event.type === 'acp_mode') {
       threads.set(sid, { ...prev, modeState: event.modeState });
+      return { threads };
+    }
+    if (event.type === 'acp_commands') {
+      threads.set(sid, { ...prev, availableCommands: event.commands });
       return { threads };
     }
     // Conversation switched (new/resume): wipe the thread and start fresh.

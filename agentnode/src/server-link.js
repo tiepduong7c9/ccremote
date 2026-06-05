@@ -7,6 +7,7 @@ const path = require('path');
 const WebSocket = require('ws');
 const { encode, MessageParser } = require('./protocol');
 const WorkspaceManager = require('./workspace-manager');
+const { getUsageDetail } = require('./usage');
 
 const pkg = require('../package.json');
 
@@ -175,6 +176,7 @@ class ServerLink {
             claudeStatus: snap.claudeStatus,
             acpSessionId: snap.acpSessionId,
             modeState: snap.modeState,
+            availableCommands: snap.availableCommands,
           });
           this._send({ type: 'attached', aid, sid: meta.id, session: result.meta });
           break;
@@ -249,7 +251,7 @@ class ServerLink {
         if (result) {
           if (result.meta.mode === 'acp') {
             const snap = result.acp || { events: [], claudeStatus: undefined, acpSessionId: null };
-            this._send({ type: 'acp_history', aid, sid: meta.id, events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState });
+            this._send({ type: 'acp_history', aid, sid: meta.id, events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState, availableCommands: snap.availableCommands });
           }
           this._send({ type: 'attached', aid, sid: meta.id, session: meta });
         }
@@ -299,6 +301,14 @@ class ServerLink {
       case 'acp_resume_conversation': {
         const att = this._attachments.get(msg.aid);
         if (att) this._manager.resumeConversation(att.sid, msg.sessionId);
+        break;
+      }
+
+      case 'acp_usage_detail': {
+        const { aid } = msg;
+        getUsageDetail()
+          .then(({ account, usage }) => this._send({ type: 'acp_usage_detail_result', aid, account, usage }))
+          .catch(() => this._send({ type: 'acp_usage_detail_result', aid, account: null, usage: null }));
         break;
       }
 

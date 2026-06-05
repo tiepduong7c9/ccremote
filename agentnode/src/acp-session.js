@@ -47,6 +47,7 @@ class AcpSession {
     this.claudeStatus = undefined;   // undefined = idle/never-prompted (green), like PTY
     this.acpSessionId = null;
     this.modeState = null;           // { currentModeId, availableModes:[{id,name,description}] }
+    this.availableCommands = [];     // [{ name, description, input? }] — slash commands
     this.alive = false;
 
     this._conn = null;
@@ -162,6 +163,12 @@ class AcpSession {
     if (update && update.sessionUpdate === 'current_mode_update') {
       if (this.modeState) this.modeState.currentModeId = update.currentModeId;
       this._emitMode();
+      return;
+    }
+    // Slash-command catalog — metadata, surfaced as acp_commands (not a thread entry).
+    if (update && update.sessionUpdate === 'available_commands_update') {
+      this.availableCommands = update.availableCommands || [];
+      this._emit({ type: 'acp_commands', commands: this.availableCommands });
       return;
     }
     const item = { type: 'acp_update', update };
@@ -335,6 +342,7 @@ class AcpSession {
       claudeStatus: this.claudeStatus,
       acpSessionId: this.acpSessionId,
       modeState: this.modeState,
+      availableCommands: this.availableCommands,
     };
   }
 

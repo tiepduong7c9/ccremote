@@ -110,7 +110,7 @@ function startDaemon() {
 
           if (result.meta.mode === 'acp') {
             const snap = result.acp || { events: [], claudeStatus: undefined, acpSessionId: null };
-            send({ type: 'acp_history', events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState });
+            send({ type: 'acp_history', events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState, availableCommands: snap.availableCommands });
             send({ type: 'attached', session: result.meta });
             break;
           }
@@ -191,6 +191,12 @@ function startDaemon() {
 
         case 'acp_resume_conversation':
           if (attachedId) manager.resumeConversation(attachedId, msg.sessionId);
+          break;
+
+        case 'acp_usage_detail':
+          require('./usage').getUsageDetail()
+            .then(({ account, usage }) => send({ type: 'acp_usage_detail_result', account, usage }))
+            .catch(() => send({ type: 'acp_usage_detail_result', account: null, usage: null }));
           break;
 
         default:
