@@ -109,16 +109,52 @@ function AddAgentnodeModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ── Confirm Modal ─────────────────────────────────────────────────────────────
+// ── Kill Session Modal ────────────────────────────────────────────────────────
 
-function ConfirmModal({ message, onConfirm, onClose }: { message: string; onConfirm: () => void; onClose: () => void }) {
+function KillSessionModal({ anid, sid, cwd, onClose }: { anid: string; sid: string; cwd: string; onClose: () => void }) {
+  const [worktree, setWorktree] = useState<{ repoPath: string; path: string; branch: string | null } | null>(null);
+  const [removeWorktree, setRemoveWorktree] = useState(false);
+
+  useEffect(() => {
+    if (!cwd) return;
+    browserSocket.gitRepoList(anid, nanoid(8), (repos) => {
+      if (!repos) return;
+      for (const repo of repos) {
+        const wt = repo.worktrees.find(w => w.path === cwd && !w.isMain);
+        if (wt) { setWorktree({ repoPath: repo.localPath, path: wt.path, branch: wt.branch }); return; }
+      }
+    });
+  }, [anid, cwd]);
+
+  const confirm = () => {
+    browserSocket.kill(anid, sid);
+    if (removeWorktree && worktree) {
+      browserSocket.gitWorktreeRemove(anid, nanoid(8), worktree.repoPath, worktree.path, () => {});
+    }
+    onClose();
+  };
+
   return (
     <div className="modal modal-open">
       <div className="modal-box max-w-sm">
-        <p className="text-sm">{message}</p>
+        <p className="text-sm">Kill this session?</p>
+        {worktree && (
+          <label className="flex items-start gap-2 mt-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-sm checkbox-error mt-0.5"
+              checked={removeWorktree}
+              onChange={e => setRemoveWorktree(e.target.checked)}
+            />
+            <span className="text-sm leading-snug">
+              Also remove the worktree
+              {worktree.branch && <span className="font-mono text-xs text-base-content/60"> ({worktree.branch})</span>}
+            </span>
+          </label>
+        )}
         <div className="modal-action">
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-          <button className="btn btn-error btn-sm" onClick={() => { onConfirm(); onClose(); }}>Kill</button>
+          <button className="btn btn-error btn-sm" onClick={confirm}>Kill</button>
         </div>
       </div>
       <div className="modal-backdrop" onClick={onClose} />
@@ -870,7 +906,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
   const agentnodes = useRegistryStore(s => [...s.agentnodes.values()]);
   const [showAdd, setShowAdd] = useState(false);
   const [newSessionAnid, setNewSessionAnid] = useState<string | null>(null);
-  const [killTarget, setKillTarget] = useState<{ anid: string; sid: string } | null>(null);
+  const [killTarget, setKillTarget] = useState<{ anid: string; sid: string; cwd: string } | null>(null);
   const [settingsAnid, setSettingsAnid] = useState<string | null>(null);
 
   const handleNew = (anid: string) => {
@@ -889,8 +925,8 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
     setNewSessionAnid(null);
   };
 
-  const handleKill = (anid: string, sid: string) => {
-    setKillTarget({ anid, sid });
+  const handleKill = (anid: string, sid: string, cwd: string) => {
+    setKillTarget({ anid, sid, cwd });
   };
 
   return (
@@ -935,7 +971,7 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
                   session={s}
                   selected={selectedAnid === node.id && selectedSid === s.id}
                   onSelect={() => onSelect(node.id, s.id)}
-                  onKill={() => handleKill(node.id, s.id)}
+                  onKill={() => handleKill(node.id, s.id, s.cwd ?? '')}
                   onRename={(name) => browserSocket.rename(node.id, s.id, name)}
                 />
               ))}
@@ -960,9 +996,10 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
         />
       )}
       {killTarget && (
-        <ConfirmModal
-          message="Kill this session?"
-          onConfirm={() => browserSocket.kill(killTarget.anid, killTarget.sid)}
+        <KillSessionModal
+          anid={killTarget.anid}
+          sid={killTarget.sid}
+          cwd={killTarget.cwd}
           onClose={() => setKillTarget(null)}
         />
       )}
