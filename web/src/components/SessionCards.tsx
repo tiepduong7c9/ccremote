@@ -233,7 +233,7 @@ function CwdCombobox({ value, onChange }: { value: string; onChange: (v: string)
 function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: () => void; onCreate: (cwd: string, name: string, mode: 'pty' | 'acp') => void }) {
   const [cwd, setCwd] = useState('~');
   const [name, setName] = useState('');
-  const [mode, setMode] = useState<'pty' | 'acp'>('pty');
+  const [mode, setMode] = useState<'pty' | 'acp'>('acp');
   const [repos, setRepos] = useState<GitRepo[] | null>(null);
   const [view, setView] = useState<'select' | 'create-worktree'>('select');
   const [wtTarget, setWtTarget] = useState('');
@@ -390,14 +390,14 @@ function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: (
               <div className="join">
                 <button
                   type="button"
-                  className={`join-item btn btn-sm flex-1 ${mode === 'pty' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
-                  onClick={() => setMode('pty')}
-                >Terminal</button>
-                <button
-                  type="button"
                   className={`join-item btn btn-sm flex-1 ${mode === 'acp' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
                   onClick={() => setMode('acp')}
                 >Chat (ACP)</button>
+                <button
+                  type="button"
+                  className={`join-item btn btn-sm flex-1 ${mode === 'pty' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
+                  onClick={() => setMode('pty')}
+                >Terminal</button>
               </div>
               <span className="text-[11px] text-base-content/40 mt-1">
                 {mode === 'acp' ? 'Structured chat UI with tool cards & inline permissions.' : 'Full Claude Code terminal (xterm).'}
