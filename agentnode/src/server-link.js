@@ -36,9 +36,27 @@ class ServerLink {
     this._connect();
   }
 
+  // Poll account/usage and push to the server: once on connect, then every 15m.
+  _startUsagePolling() {
+    this._pushUsage();
+    if (this._usageTimer) clearInterval(this._usageTimer);
+    this._usageTimer = setInterval(() => this._pushUsage(), 15 * 60 * 1000);
+  }
+
+  _stopUsagePolling() {
+    if (this._usageTimer) { clearInterval(this._usageTimer); this._usageTimer = null; }
+  }
+
+  _pushUsage() {
+    getUsageDetail()
+      .then(({ account, usage }) => this._send({ type: 'usage', account, usage }))
+      .catch(() => {});
+  }
+
   stop() {
     this._stopped = true;
     if (this._retryTimer) clearTimeout(this._retryTimer);
+    this._stopUsagePolling();
     if (this._ws) {
       this._ws.removeAllListeners();
       this._ws.close();
@@ -74,6 +92,7 @@ class ServerLink {
         version: pkg.version,
       });
       this._send({ type: 'sessions', sessions: this._manager.list() });
+      this._startUsagePolling();
     });
 
     ws.on('message', (raw) => {
@@ -83,6 +102,7 @@ class ServerLink {
     ws.on('close', () => {
       if (this._stopped) return;
       this._ws = null;
+      this._stopUsagePolling();
       // Detach all current attachments from manager
       for (const [, att] of this._attachments) {
         try { this._manager.detach(att.sid, att.listener); } catch (_) {}
@@ -311,6 +331,10 @@ class ServerLink {
           .catch(() => this._send({ type: 'acp_usage_detail_result', aid, account: null, usage: null }));
         break;
       }
+
+      case 'usage_refresh':
+        this._pushUsage();
+        break;
 
       case 'kill': {
         const ok = this._manager.kill(msg.sid);

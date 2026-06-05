@@ -10,7 +10,7 @@ class AgentnodeHub extends EventEmitter {
   }
 
   register(record, ws) {
-    const entry = { ws, record, sessions: [], hostname: null, platform: null };
+    const entry = { ws, record, sessions: [], hostname: null, platform: null, usage: null };
     this.online.set(record.id, entry);
     this.emit('online', { anid: record.id, name: record.name });
     return entry;
@@ -35,6 +35,11 @@ class AgentnodeHub extends EventEmitter {
       case 'sessions':
         entry.sessions = msg.sessions || [];
         this.emit('sessions', { anid: record.id, sessions: entry.sessions });
+        break;
+
+      case 'usage':
+        entry.usage = { account: msg.account || null, usage: msg.usage || null };
+        this.emit('usage', { anid: record.id, ...entry.usage });
         break;
 
       case 'session_created':
@@ -110,6 +115,7 @@ class AgentnodeHub extends EventEmitter {
       hostname: entry.hostname,
       platform: entry.platform,
       sessions: entry.sessions,
+      usage: entry.usage,
       online: true,
     }));
   }

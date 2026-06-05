@@ -137,6 +137,10 @@ class BrowserSocket {
         break;
       }
 
+      case 'usage':
+        registry.setUsage(msg.anid, { account: msg.account, usage: msg.usage });
+        break;
+
       case 'attached': {
         const att = terminals.attachments.get(msg.aid);
         if (att) {
@@ -531,6 +535,10 @@ class BrowserSocket {
   acpUsageDetail(anid: string, aid: string, cb: (detail: { account: AcpAccount | null; usage: AcpUsageData | null }) => void) {
     this.acpUsageCallbacks.set(aid, cb);
     this.send({ type: 'acp_usage_detail', anid, aid });
+  }
+
+  usageRefresh(anid: string) {
+    this.send({ type: 'usage_refresh', anid });
   }
 
   kill(anid: string, sid: string) {

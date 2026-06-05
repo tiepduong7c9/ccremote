@@ -119,6 +119,7 @@ export interface AgentnodeView {
   hostname: string | null;
   platform: string | null;
   sessions: SessionMeta[];
+  usage?: AcpUsageDetail | null;
   online: boolean;
 }
 
@@ -127,6 +128,7 @@ export type ServerMsg =
   | { type: 'agentnode_online'; agentnode: { anid: string; name: string } }
   | { type: 'agentnode_offline'; anid: string }
   | { type: 'sessions'; anid: string; sessions: SessionMeta[] }
+  | { type: 'usage'; anid: string; account: AcpAccount | null; usage: AcpUsageData | null }
   | { type: 'attached'; anid: string; aid: string; sid: string; session: SessionMeta }
   | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string; redraw?: boolean }
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
@@ -158,7 +160,7 @@ export type ServerMsg =
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'acp_prompt' | 'acp_cancel' | 'acp_permission_response' | 'acp_set_mode' | 'acp_list_conversations' | 'acp_new_conversation' | 'acp_resume_conversation' | 'acp_usage_detail' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'acp_prompt' | 'acp_cancel' | 'acp_permission_response' | 'acp_set_mode' | 'acp_list_conversations' | 'acp_new_conversation' | 'acp_resume_conversation' | 'acp_usage_detail' | 'usage_refresh' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
   anid: string;
   aid?: string;
   sid?: string;

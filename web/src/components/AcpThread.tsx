@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen, X } from 'lucide-react';
+import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen } from 'lucide-react';
 import { browserSocket } from '../ws';
 import { useTerminalStore } from '../store';
 import { useAcpStore } from '../acp-store';
-import type { AcpAccount, AcpCommand, AcpContentBlock, AcpConversation, AcpEvent, AcpModeState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent, AcpUsageData, AcpUsageWindow } from '../lib/protocol';
+import UsageModal, { type UsageDetail } from './UsageModal';
+import type { AcpCommand, AcpContentBlock, AcpConversation, AcpEvent, AcpModeState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent } from '../lib/protocol';
 
 // Claude brand coral, used for the focus ring and send button (matches the
 // Claude Code GUI). Kept as a literal so Tailwind's JIT emits the classes.
@@ -276,92 +277,6 @@ function ChatHeader({ anid, sid, aid }: { anid: string; sid: string; aid: string
   );
 }
 
-function fmtResets(iso?: string): string {
-  if (!iso) return '';
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 0) return 'Resets now';
-  const m = Math.floor(ms / 60000);
-  if (m < 60) return `Resets in ${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `Resets in ${h}h`;
-  return `Resets in ${Math.floor(h / 24)}d`;
-}
-const planLabel = (t?: string) => (t ? `Claude ${t.charAt(0).toUpperCase()}${t.slice(1)}` : '—');
-const authLabel = (m?: string) => (!m ? '—' : m === 'claude.ai' ? 'Claude AI' : m);
-
-function UsageBar({ label, win }: { label: string; win?: AcpUsageWindow | null }) {
-  if (!win) return null;
-  const pct = Math.max(0, Math.min(100, Math.round(win.utilization)));
-  return (
-    <div className="mt-3">
-      <div className="flex justify-between text-sm"><span>{label}</span><span className="tabular-nums">{pct}%</span></div>
-      <div className="mt-1 h-1.5 rounded-full bg-base-300 overflow-hidden">
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CORAL }} />
-      </div>
-      <div className="text-[11px] text-base-content/40 mt-0.5">{fmtResets(win.resets_at)}</div>
-    </div>
-  );
-}
-
-function AccountRow({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm border-b border-base-200 last:border-0">
-      <span className="text-base-content/50 shrink-0">{k}</span>
-      <span className="font-medium text-right truncate">{v}</span>
-    </div>
-  );
-}
-
-function UsageModal({ anid, aid, onClose }: { anid: string; aid: string; onClose: () => void }) {
-  const [detail, setDetail] = useState<{ account: AcpAccount | null; usage: AcpUsageData | null } | null>(null);
-  useEffect(() => { browserSocket.acpUsageDetail(anid, aid, setDetail); }, [anid, aid]);
-  const acc = detail?.account;
-  const usage = detail?.usage;
-  return (
-    <div className="modal modal-open">
-      <div className="modal-box max-w-md">
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-lg">Account &amp; Usage</h3>
-          <button className="btn btn-sm btn-ghost btn-circle" onClick={onClose}><X size={16} /></button>
-        </div>
-        {!detail ? (
-          <div className="py-12 flex justify-center"><span className="loading loading-spinner" /></div>
-        ) : (
-          <div className="mt-3">
-            <div className="text-[11px] uppercase tracking-wider text-base-content/40 font-semibold mb-1">Account</div>
-            <AccountRow k="Auth method" v={authLabel(acc?.authMethod)} />
-            <AccountRow k="Email" v={acc?.email ?? '—'} />
-            <AccountRow k="Organization" v={acc?.orgName ?? '—'} />
-            <AccountRow k="Plan" v={planLabel(acc?.subscriptionType)} />
-
-            <div className="text-[11px] uppercase tracking-wider text-base-content/40 font-semibold mt-5">Usage</div>
-            {usage ? (
-              <>
-                <UsageBar label="Session (5hr)" win={usage.five_hour} />
-                <UsageBar label="Weekly (7 day)" win={usage.seven_day} />
-                <UsageBar label="Weekly Opus" win={usage.seven_day_opus} />
-                <UsageBar label="Weekly Sonnet" win={usage.seven_day_sonnet} />
-                {usage.extra_usage && usage.extra_usage.used_credits > 0 && (
-                  <div className="mt-3 text-sm flex justify-between">
-                    <span>Extra usage</span>
-                    <span>{usage.extra_usage.used_credits} {usage.extra_usage.currency}</span>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-sm text-base-content/50 mt-2">Usage data unavailable.</div>
-            )}
-            <a className="mt-5 inline-block text-sm" style={{ color: CORAL }} href="https://claude.ai/settings/usage" target="_blank" rel="noreferrer">
-              Manage usage on claude.ai
-            </a>
-          </div>
-        )}
-      </div>
-      <div className="modal-backdrop" onClick={onClose} />
-    </div>
-  );
-}
-
 export default function AcpThread({ anid, sid, visible = true }: Props) {
   const aidRef = useRef<string>(nanoid(8));
   const setAttachment = useTerminalStore(s => s.setAttachment);
@@ -374,6 +289,13 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const [cmdIndex, setCmdIndex] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
+  const [usageDetail, setUsageDetail] = useState<UsageDetail | null>(null);
+
+  const openUsage = () => {
+    setUsageDetail(null);
+    setShowUsage(true);
+    browserSocket.acpUsageDetail(anid, aidRef.current, setUsageDetail);
+  };
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -422,14 +344,14 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     const text = draft.trim();
     if (!text) return;
     // /usage has no chat output over ACP — show the rich popup instead.
-    if (text === '/usage') { setShowUsage(true); setDraft(''); return; }
+    if (text === '/usage') { openUsage(); setDraft(''); return; }
     browserSocket.acpPrompt(anid, aidRef.current, [{ type: 'text', text }]);
     setDraft('');
   };
 
   const acceptCommand = (cmd: AcpCommand) => {
     setCmdDismissed(true);
-    if (cmd.name === 'usage') { setShowUsage(true); setDraft(''); return; }
+    if (cmd.name === 'usage') { openUsage(); setDraft(''); return; }
     if (cmd.input?.hint) {
       // Command takes arguments — drop "/name " in the box so the user can type them.
       setDraft(`/${cmd.name} `);
@@ -638,7 +560,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
         </div>
       </div>
 
-      {showUsage && <UsageModal anid={anid} aid={aidRef.current} onClose={() => setShowUsage(false)} />}
+      {showUsage && <UsageModal detail={usageDetail} onClose={() => setShowUsage(false)} />}
     </div>
   );
 }

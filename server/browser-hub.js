@@ -21,6 +21,9 @@ class BrowserHub {
     agentnodeHub.on('sessions', ({ anid, sessions }) => {
       this._broadcast({ type: 'sessions', anid, sessions });
     });
+    agentnodeHub.on('usage', ({ anid, account, usage }) => {
+      this._broadcast({ type: 'usage', anid, account, usage });
+    });
     agentnodeHub.on('relay', ({ anid, msg }) => {
       this._routeRelay(anid, msg);
     });
@@ -87,6 +90,7 @@ class BrowserHub {
       case 'acp_new_conversation':
       case 'acp_resume_conversation':
       case 'acp_usage_detail':
+      case 'usage_refresh':
         this._hub.send(anid, msg);
         break;
 
