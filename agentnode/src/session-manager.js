@@ -1,6 +1,7 @@
 'use strict';
 
 const pty = require('node-pty');
+const AcpSession = require('./acp-session');
 const { nanoid } = require('nanoid');
 const fs = require('fs');
 const os = require('os');
@@ -81,6 +82,34 @@ class SessionManager {
     const parentSid = opts.parentSid || null;
     const transient = opts.transient || false;
 
+    // ACP mode: drive Claude over the Agent Client Protocol instead of a PTY.
+    if (opts.mode === 'acp') {
+      const meta = {
+        id,
+        name,
+        cwd,
+        command: 'claude',
+        mode: 'acp',
+        pid: null,
+        status: 'running',
+        createdAt: new Date().toISOString(),
+        lastAttachedAt: null,
+      };
+      const acp = new AcpSession({ cwd, env: { ...process.env, CCREMOTE_SID: id } });
+      const session = { meta, pty: null, acp, scrollback: Buffer.alloc(0), listeners: acp.listeners };
+      this._registerAcpHandlers(session);
+      this._sessions.set(id, session);
+      acp.start()
+        .then(() => { meta.acpSessionId = acp.acpSessionId; this._persist(); })
+        .catch((err) => {
+          acp._emit({ type: 'acp_error', message: `Failed to start Claude (ACP): ${err.message}` });
+          meta.status = 'suspended';
+          this._persist();
+        });
+      this._persist();
+      return { ...meta };
+    }
+
     const ptyProc = pty.spawn(command, args, {
       name: 'xterm-256color',
       cols: opts.cols || 220,
@@ -140,11 +169,59 @@ class SessionManager {
     });
   }
 
+  // Mirror PTY status/exit handling onto an ACP-backed session so meta.claudeStatus
+  // and meta.status stay in sync and get persisted/broadcast.
+  _registerAcpHandlers(session) {
+    const { meta, acp } = session;
+    acp.listeners.add((event) => {
+      if (event.type === 'acp_status') {
+        const next = event.claudeStatus; // working | waiting | idle (undefined never emitted)
+        if (meta.claudeStatus !== next) {
+          if (next === undefined) delete meta.claudeStatus;
+          else meta.claudeStatus = next;
+          this._persist();
+        }
+      } else if (event.type === 'acp_reset') {
+        // Conversation switched (new/resume) — pin the new id and clear status.
+        meta.acpSessionId = event.acpSessionId;
+        delete meta.claudeStatus;
+        this._persist();
+      } else if (event.type === 'exit') {
+        // The adapter process exited — keep the session resumable via loadSession.
+        if (meta.status === 'running') meta.status = 'suspended';
+        delete meta.claudeStatus;
+        this._persist();
+      }
+    });
+  }
+
   resumeSession(id) {
     const session = this._sessions.get(id);
     if (!session || session.meta.status !== 'suspended') return false;
 
     const { meta } = session;
+
+    // ACP sessions resume by re-spawning the adapter and loading the prior
+    // conversation by its ACP sessionId (falls back to a fresh session).
+    if (meta.mode === 'acp') {
+      const acp = new AcpSession({ cwd: meta.cwd, env: { ...process.env, CCREMOTE_SID: meta.id } });
+      session.acp = acp;
+      session.listeners = acp.listeners;
+      session.scrollback = Buffer.alloc(0);
+      meta.status = 'running';
+      meta.resumedAt = new Date().toISOString();
+      delete meta.exitCode;
+      this._registerAcpHandlers(session);
+      acp.start({ resumeSessionId: meta.acpSessionId })
+        .then(() => { meta.acpSessionId = acp.acpSessionId; this._persist(); })
+        .catch((err) => {
+          acp._emit({ type: 'acp_error', message: `Failed to resume Claude (ACP): ${err.message}` });
+          meta.status = 'suspended';
+          this._persist();
+        });
+      this._persist();
+      return true;
+    }
     // For claude: resume the exact conversation by its pinned session ID.
     // Fall back to --continue for sessions created before this feature.
     // For other commands: restart with the original args.
@@ -212,7 +289,11 @@ class SessionManager {
     session.meta.lastAttachedAt = new Date().toISOString();
     session.listeners.add(listener);
     this._persist();
-    return { scrollback: session.scrollback, meta: { ...session.meta } };
+    return {
+      scrollback: session.scrollback,
+      meta: { ...session.meta },
+      acp: session.acp ? session.acp.snapshot() : null,
+    };
   }
 
   detach(id, listener) {
@@ -227,7 +308,7 @@ class SessionManager {
 
   write(id, buf) {
     const session = this._sessions.get(id);
-    if (!session || session.meta.status !== 'running') return false;
+    if (!session || session.meta.status !== 'running' || !session.pty) return false;
     // node-pty.write() takes a string; use binary encoding to preserve all bytes
     session.pty.write(buf.toString());
     return true;
@@ -235,8 +316,46 @@ class SessionManager {
 
   resize(id, cols, rows) {
     const session = this._sessions.get(id);
-    if (!session || session.meta.status !== 'running') return;
+    if (!session || session.meta.status !== 'running' || !session.pty) return;
     try { session.pty.resize(cols, rows); } catch (_) {}
+  }
+
+  // ── ACP operations (no-ops for PTY sessions) ──────────────────────────────
+  prompt(id, blocks) {
+    const session = this._sessions.get(id);
+    if (!session || !session.acp) return false;
+    session.acp.prompt(blocks).catch(() => {});
+    return true;
+  }
+
+  cancelPrompt(id) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.cancel();
+  }
+
+  resolvePermission(id, requestId, optionId) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.resolvePermission(requestId, optionId);
+  }
+
+  setMode(id, modeId) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.setMode(modeId);
+  }
+
+  listConversations(id) {
+    const session = this._sessions.get(id);
+    return session && session.acp ? session.acp.listConversations() : Promise.resolve([]);
+  }
+
+  newConversation(id) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.newConversation().catch(() => {});
+  }
+
+  resumeConversation(id, sessionId) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.resumeConversation(sessionId).catch(() => {});
   }
 
   rename(id, name) {
@@ -258,14 +377,15 @@ class SessionManager {
     // Kill any bash child sessions that belong to this session
     for (const [childId, child] of this._sessions) {
       if (child.meta.parentSid === session.meta.id) {
-        if (child.meta.status === 'running') {
+        if (child.meta.status === 'running' && child.pty) {
           try { child.pty.kill(); } catch (_) {}
         }
         this._sessions.delete(childId);
       }
     }
     if (session.meta.status === 'running') {
-      try { session.pty.kill(); } catch (_) {}
+      if (session.pty) { try { session.pty.kill(); } catch (_) {} }
+      if (session.acp) { try { session.acp.kill(); } catch (_) {} }
     }
     this._sessions.delete(session.meta.id);
     this._persist();
@@ -278,14 +398,15 @@ class SessionManager {
   suspendAll() {
     for (const [id, session] of this._sessions) {
       if (session.meta.transient) {
-        if (session.meta.status === 'running') {
+        if (session.meta.status === 'running' && session.pty) {
           try { session.pty.kill(); } catch (_) {}
         }
         this._sessions.delete(id);
       } else if (session.meta.status === 'running') {
         session.meta.status = 'suspended';
         delete session.meta.claudeStatus;
-        try { session.pty.kill(); } catch (_) {}
+        if (session.pty) { try { session.pty.kill(); } catch (_) {} }
+        if (session.acp) { try { session.acp.kill(); } catch (_) {} }
       }
     }
     this._persist();

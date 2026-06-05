@@ -64,6 +64,7 @@ function startDaemon() {
               args: msg.args,
               cols: msg.cols,
               rows: msg.rows,
+              mode: msg.mode,
             });
             send({ type: 'created', session: meta });
           } catch (err) {
@@ -94,6 +95,8 @@ function startDaemon() {
               send({ type: 'data', data: event.data.toString('base64') });
             } else if (event.type === 'exit') {
               send({ type: 'session_exit', code: event.code });
+            } else if (typeof event.type === 'string' && event.type.startsWith('acp_')) {
+              send({ type: 'acp_event', event });
             }
           };
 
@@ -104,6 +107,13 @@ function startDaemon() {
           }
           attachedId = meta.id;
           attachedListener = listener;
+
+          if (result.meta.mode === 'acp') {
+            const snap = result.acp || { events: [], claudeStatus: undefined, acpSessionId: null };
+            send({ type: 'acp_history', events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState, availableCommands: snap.availableCommands, model: snap.model });
+            send({ type: 'attached', session: result.meta });
+            break;
+          }
 
           if (result.scrollback.length > 0) {
             send({ type: 'scrollback', data: result.scrollback.toString('base64') });
@@ -149,6 +159,44 @@ function startDaemon() {
 
         case 'set_claude_status':
           manager.setClaudeStatus(msg.sid, msg.claudeStatus);
+          break;
+
+        case 'acp_prompt':
+          if (attachedId) manager.prompt(attachedId, msg.blocks);
+          break;
+
+        case 'acp_cancel':
+          if (attachedId) manager.cancelPrompt(attachedId);
+          break;
+
+        case 'acp_permission_response':
+          if (attachedId) manager.resolvePermission(attachedId, msg.requestId, msg.optionId);
+          break;
+
+        case 'acp_set_mode':
+          if (attachedId) manager.setMode(attachedId, msg.modeId);
+          break;
+
+        case 'acp_list_conversations':
+          if (attachedId) {
+            manager.listConversations(attachedId)
+              .then(conversations => send({ type: 'acp_conversations_result', conversations }))
+              .catch(() => send({ type: 'acp_conversations_result', conversations: [] }));
+          }
+          break;
+
+        case 'acp_new_conversation':
+          if (attachedId) manager.newConversation(attachedId);
+          break;
+
+        case 'acp_resume_conversation':
+          if (attachedId) manager.resumeConversation(attachedId, msg.sessionId);
+          break;
+
+        case 'acp_usage_detail':
+          require('./usage').getUsageDetail()
+            .then(({ account, usage }) => send({ type: 'acp_usage_detail_result', account, usage }))
+            .catch(() => send({ type: 'acp_usage_detail_result', account: null, usage: null }));
           break;
 
         default:

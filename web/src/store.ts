@@ -46,6 +46,7 @@ interface RegistryState {
   setOnline: (node: { anid: string; name: string }) => void;
   setOffline: (anid: string) => void;
   setSessions: (anid: string, sessions: SessionMeta[]) => void;
+  setUsage: (anid: string, usage: AgentnodeView['usage']) => void;
 }
 
 export const useRegistryStore = create<RegistryState>((set, get) => ({
@@ -86,6 +87,14 @@ export const useRegistryStore = create<RegistryState>((set, get) => ({
       const map = new Map(state.agentnodes);
       const existing = map.get(anid);
       if (existing) map.set(anid, { ...existing, sessions });
+      return { agentnodes: map };
+    });
+  },
+  setUsage: (anid, usage) => {
+    set(state => {
+      const map = new Map(state.agentnodes);
+      const existing = map.get(anid);
+      if (existing) map.set(anid, { ...existing, usage });
       return { agentnodes: map };
     });
   },

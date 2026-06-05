@@ -9,7 +9,8 @@ import NotificationToggle from './components/NotificationToggle';
 import RightPanel from './components/RightPanel';
 import FileSearchModal from './components/FileSearchModal';
 import SkillsManagerModal from './components/SkillsManagerModal';
-import { Folder, TerminalSquare, ChevronRight, Wand2 } from 'lucide-react';
+import UsageModal from './components/UsageModal';
+import { Folder, TerminalSquare, ChevronRight, Wand2, Zap } from 'lucide-react';
 
 export default function App() {
   const { authed, check } = useAuthStore();
@@ -17,6 +18,12 @@ export default function App() {
   const { toasts, removeToast } = useToastStore();
   const [showFileSearch, setShowFileSearch] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
+
+  // Usage is per-agentnode; show the selected node's (or the first node with data).
+  const usageNode = (selectedAnid ? agentnodes.get(selectedAnid) : null) || [...agentnodes.values()].find(n => n.usage?.usage);
+  const usageData = usageNode?.usage ?? null;
+  const openUsage = () => { setShowUsage(true); if (usageNode) browserSocket.usageRefresh(usageNode.id); };
 
   const session = selectedAnid && selectedSid
     ? agentnodes.get(selectedAnid)?.sessions.find(s => s.id === selectedSid)
@@ -84,6 +91,17 @@ export default function App() {
             </div>
           )}
           <div className="flex items-center gap-0.5 shrink-0">
+            {usageData?.usage && (
+              <button
+                className="btn btn-ghost btn-sm gap-1.5 font-normal"
+                onClick={openUsage}
+                title="Account & usage"
+              >
+                <Zap size={13} style={{ color: '#c96442' }} />
+                <span className="text-xs tabular-nums">5h {Math.round(usageData.usage.five_hour?.utilization ?? 0)}%</span>
+                <span className="text-xs text-base-content/40 tabular-nums">7d {Math.round(usageData.usage.seven_day?.utilization ?? 0)}%</span>
+              </button>
+            )}
             <button
               className="btn btn-ghost btn-sm gap-1"
               onClick={() => setShowSkills(true)}
@@ -116,6 +134,7 @@ export default function App() {
         />
       )}
       {showSkills && <SkillsManagerModal onClose={() => setShowSkills(false)} />}
+      {showUsage && <UsageModal detail={usageData} onClose={() => setShowUsage(false)} />}
       {toasts.length > 0 && (
         <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50 pointer-events-none">
           {toasts.map(t => (

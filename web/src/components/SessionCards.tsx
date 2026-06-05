@@ -230,9 +230,10 @@ function CwdCombobox({ value, onChange }: { value: string; onChange: (v: string)
 
 // ── New Session Modal ─────────────────────────────────────────────────────────
 
-function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: () => void; onCreate: (cwd: string, name: string) => void }) {
+function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: () => void; onCreate: (cwd: string, name: string, mode: 'pty' | 'acp') => void }) {
   const [cwd, setCwd] = useState('~');
   const [name, setName] = useState('');
+  const [mode, setMode] = useState<'pty' | 'acp'>('acp');
   const [repos, setRepos] = useState<GitRepo[] | null>(null);
   const [view, setView] = useState<'select' | 'create-worktree'>('select');
   const [wtTarget, setWtTarget] = useState('');
@@ -259,7 +260,7 @@ function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: (
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreate(cwd.trim() || '~', name.trim());
+    onCreate(cwd.trim() || '~', name.trim(), mode);
     onClose();
   };
 
@@ -383,6 +384,24 @@ function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: (
                 onChange={e => setName(e.target.value)}
                 placeholder="auto-generated if empty"
               />
+            </div>
+            <div className="form-control mt-3">
+              <label className="label"><span className="label-text">Interface</span></label>
+              <div className="join">
+                <button
+                  type="button"
+                  className={`join-item btn btn-sm flex-1 ${mode === 'acp' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
+                  onClick={() => setMode('acp')}
+                >Chat (ACP)</button>
+                <button
+                  type="button"
+                  className={`join-item btn btn-sm flex-1 ${mode === 'pty' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
+                  onClick={() => setMode('pty')}
+                >Terminal</button>
+              </div>
+              <span className="text-[11px] text-base-content/40 mt-1">
+                {mode === 'acp' ? 'Structured chat UI with tool cards & inline permissions.' : 'Full Claude Code terminal (xterm).'}
+              </span>
             </div>
             <div className="modal-action">
               <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -852,6 +871,9 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
               {s.name || s.id.slice(0, 8)}
             </span>
           )}
+          {s.mode === 'acp' && (
+            <span className="shrink-0 badge badge-xs badge-outline text-[9px] font-medium">chat</span>
+          )}
         </div>
 
         {s.cwd && (
@@ -913,12 +935,13 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
     setNewSessionAnid(anid);
   };
 
-  const handleCreate = (cwd: string, name: string) => {
+  const handleCreate = (cwd: string, name: string, mode: 'pty' | 'acp') => {
     if (!newSessionAnid) return;
     saveRecentCwd(cwd);
     browserSocket.create(newSessionAnid, nanoid(8), {
       cwd,
       name: name || undefined,
+      mode,
       cols: Math.floor(window.innerWidth * 0.7 / 8),
       rows: Math.floor(window.innerHeight / 20),
     });

@@ -13,9 +13,11 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   }
   return btoa(binary);
 }
-import type { GitCommit, GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
+import type { AcpAccount, AcpConversation, AcpUsageData, GitCommit, GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
 import { notificationsEnabled } from './lib/notifications';
 import { useRegistryStore, useTerminalStore, useToastStore } from './store';
+import { useAcpStore } from './acp-store';
+import type { AcpContentBlock } from './lib/protocol';
 
 class MessageParser {
   private buf = '';
@@ -65,6 +67,8 @@ class BrowserSocket {
   private gitCheckoutCallbacks: Map<string, (error?: string) => void> = new Map();
   private gitLogCallbacks: Map<string, (commits: GitCommit[] | null, error?: string) => void> = new Map();
   private skillInjectCallbacks: Map<string, (error?: string) => void> = new Map();
+  private acpConvCallbacks: Map<string, (conversations: AcpConversation[]) => void> = new Map();
+  private acpUsageCallbacks: Map<string, (detail: { account: AcpAccount | null; usage: AcpUsageData | null }) => void> = new Map();
 
   constructor() {
     this.parser = new MessageParser((msg) => this.handleMessage(msg));
@@ -133,6 +137,10 @@ class BrowserSocket {
         break;
       }
 
+      case 'usage':
+        registry.setUsage(msg.anid, { account: msg.account, usage: msg.usage });
+        break;
+
       case 'attached': {
         const att = terminals.attachments.get(msg.aid);
         if (att) {
@@ -161,6 +169,26 @@ class BrowserSocket {
         // Hot path: bypass React entirely
         const term = this.termsByAid.get(msg.aid);
         if (term) term.write(b64ToBytes(msg.data));
+        break;
+      }
+
+      case 'acp_history':
+        useAcpStore.getState().setHistory(msg.sid, msg.events, msg.claudeStatus, msg.acpSessionId, msg.modeState, msg.availableCommands, msg.model);
+        break;
+
+      case 'acp_event':
+        useAcpStore.getState().appendEvent(msg.sid, msg.event);
+        break;
+
+      case 'acp_conversations_result': {
+        const cb = this.acpConvCallbacks.get(msg.aid);
+        if (cb) { cb(msg.conversations); this.acpConvCallbacks.delete(msg.aid); }
+        break;
+      }
+
+      case 'acp_usage_detail_result': {
+        const cb = this.acpUsageCallbacks.get(msg.aid);
+        if (cb) { cb({ account: msg.account, usage: msg.usage }); this.acpUsageCallbacks.delete(msg.aid); }
         break;
       }
 
@@ -471,8 +499,46 @@ class BrowserSocket {
     this.send({ type: 'resize', anid, aid, cols, rows });
   }
 
-  create(anid: string, aid: string, opts: { name?: string; command?: string; cwd?: string; cols: number; rows: number; parentSid?: string }) {
+  create(anid: string, aid: string, opts: { name?: string; command?: string; cwd?: string; cols: number; rows: number; parentSid?: string; mode?: 'pty' | 'acp' }) {
     this.send({ type: 'create', anid, aid, ...opts });
+  }
+
+  acpPrompt(anid: string, aid: string, blocks: AcpContentBlock[]) {
+    this.send({ type: 'acp_prompt', anid, aid, blocks });
+  }
+
+  acpCancel(anid: string, aid: string) {
+    this.send({ type: 'acp_cancel', anid, aid });
+  }
+
+  acpPermissionResponse(anid: string, aid: string, requestId: string, optionId: string | null) {
+    this.send({ type: 'acp_permission_response', anid, aid, requestId, optionId });
+  }
+
+  acpSetMode(anid: string, aid: string, modeId: string) {
+    this.send({ type: 'acp_set_mode', anid, aid, modeId });
+  }
+
+  acpListConversations(anid: string, aid: string, cb: (conversations: AcpConversation[]) => void) {
+    this.acpConvCallbacks.set(aid, cb);
+    this.send({ type: 'acp_list_conversations', anid, aid });
+  }
+
+  acpNewConversation(anid: string, aid: string) {
+    this.send({ type: 'acp_new_conversation', anid, aid });
+  }
+
+  acpResumeConversation(anid: string, aid: string, sessionId: string) {
+    this.send({ type: 'acp_resume_conversation', anid, aid, sessionId });
+  }
+
+  acpUsageDetail(anid: string, aid: string, cb: (detail: { account: AcpAccount | null; usage: AcpUsageData | null }) => void) {
+    this.acpUsageCallbacks.set(aid, cb);
+    this.send({ type: 'acp_usage_detail', anid, aid });
+  }
+
+  usageRefresh(anid: string) {
+    this.send({ type: 'usage_refresh', anid });
   }
 
   kill(anid: string, sid: string) {

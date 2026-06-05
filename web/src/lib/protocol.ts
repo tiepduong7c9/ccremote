@@ -32,12 +32,78 @@ export interface SessionMeta {
   name: string;
   cwd: string;
   command: string;
+  mode?: 'pty' | 'acp';
   status: 'running' | 'suspended' | 'exited';
   claudeStatus?: 'working' | 'waiting' | 'idle';
   parentSid?: string;
   createdAt: string;
   lastAttachedAt: string | null;
 }
+
+// ── ACP (Agent Client Protocol) thread types ────────────────────────────────
+export type AcpContentBlock = { type: 'text'; text: string } | { type: string; [k: string]: unknown };
+
+export interface AcpToolContent {
+  type: string; // 'content' | 'diff' | ...
+  content?: AcpContentBlock;
+  path?: string;
+  oldText?: string | null;
+  newText?: string;
+  [k: string]: unknown;
+}
+
+export interface AcpPlanEntry { content: string; priority?: string; status?: string }
+
+export type AcpUpdate =
+  | { sessionUpdate: 'agent_message_chunk'; content: AcpContentBlock }
+  | { sessionUpdate: 'agent_thought_chunk'; content: AcpContentBlock }
+  | { sessionUpdate: 'user_message_chunk'; content: AcpContentBlock }
+  | { sessionUpdate: 'tool_call'; toolCallId: string; title?: string; kind?: string; status?: string; content?: AcpToolContent[] }
+  | { sessionUpdate: 'tool_call_update'; toolCallId: string; status?: string; title?: string; content?: AcpToolContent[] }
+  | { sessionUpdate: 'plan'; entries: AcpPlanEntry[] }
+  | { sessionUpdate: string; [k: string]: unknown };
+
+export interface AcpSessionMode { id: string; name: string; description?: string | null }
+export interface AcpModeState { currentModeId: string; availableModes: AcpSessionMode[] }
+
+export interface AcpConversation { sessionId: string; title: string | null; mtime: number }
+
+export interface AcpCommand { name: string; description: string; input?: { hint: string } | null }
+
+export interface AcpUsageWindow { utilization: number; resets_at: string }
+export interface AcpUsageData {
+  five_hour?: AcpUsageWindow | null;
+  seven_day?: AcpUsageWindow | null;
+  seven_day_opus?: AcpUsageWindow | null;
+  seven_day_sonnet?: AcpUsageWindow | null;
+  extra_usage?: { is_enabled: boolean; monthly_limit: number; used_credits: number; utilization: number | null; currency: string; disabled_reason: string | null } | null;
+}
+export interface AcpAccount {
+  loggedIn?: boolean;
+  authMethod?: string;
+  apiProvider?: string;
+  email?: string;
+  orgId?: string;
+  orgName?: string;
+  subscriptionType?: string;
+}
+export interface AcpUsageDetail { account: AcpAccount | null; usage: AcpUsageData | null }
+
+export interface AcpPermissionOption { optionId: string; name: string; kind?: string }
+export interface AcpPermissionRequest { options: AcpPermissionOption[]; toolCall?: { title?: string; kind?: string; content?: AcpToolContent[]; [k: string]: unknown }; [k: string]: unknown }
+
+export type AcpEvent = (
+  | { type: 'acp_user'; blocks: AcpContentBlock[] }
+  | { type: 'acp_update'; update: AcpUpdate }
+  | { type: 'acp_permission'; requestId: string; request: AcpPermissionRequest; resolved?: string }
+  | { type: 'acp_stop'; stopReason: string }
+  | { type: 'acp_error'; message: string }
+  | { type: 'acp_status'; claudeStatus?: 'working' | 'waiting' | 'idle' }
+  | { type: 'acp_mode'; modeState: AcpModeState | null }
+  | { type: 'acp_reset'; acpSessionId: string | null }
+  | { type: 'acp_commands'; commands: AcpCommand[] }
+  | { type: 'acp_model'; model: string | null }
+) & { seq?: number };
 
 export interface Skill {
   id: string;
@@ -54,6 +120,7 @@ export interface AgentnodeView {
   hostname: string | null;
   platform: string | null;
   sessions: SessionMeta[];
+  usage?: AcpUsageDetail | null;
   online: boolean;
 }
 
@@ -62,9 +129,14 @@ export type ServerMsg =
   | { type: 'agentnode_online'; agentnode: { anid: string; name: string } }
   | { type: 'agentnode_offline'; anid: string }
   | { type: 'sessions'; anid: string; sessions: SessionMeta[] }
+  | { type: 'usage'; anid: string; account: AcpAccount | null; usage: AcpUsageData | null }
   | { type: 'attached'; anid: string; aid: string; sid: string; session: SessionMeta }
   | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string; redraw?: boolean }
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
+  | { type: 'acp_history'; anid: string; aid: string; sid: string; events: AcpEvent[]; claudeStatus?: 'working' | 'waiting' | 'idle'; acpSessionId: string | null; modeState?: AcpModeState | null; availableCommands?: AcpCommand[]; model?: string | null }
+  | { type: 'acp_event'; anid: string; aid: string; sid: string; event: AcpEvent }
+  | { type: 'acp_conversations_result'; anid: string; aid: string; conversations: AcpConversation[] }
+  | { type: 'acp_usage_detail_result'; anid: string; aid: string; account: AcpAccount | null; usage: AcpUsageData | null }
   | { type: 'session_exit'; anid: string; sid: string; code: number }
   | { type: 'image_uploaded'; anid: string; aid: string; path: string }
   | { type: 'git_repos'; anid: string; aid: string; repos: GitRepo[] }
@@ -89,7 +161,7 @@ export type ServerMsg =
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'acp_prompt' | 'acp_cancel' | 'acp_permission_response' | 'acp_set_mode' | 'acp_list_conversations' | 'acp_new_conversation' | 'acp_resume_conversation' | 'acp_usage_detail' | 'usage_refresh' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
   anid: string;
   aid?: string;
   sid?: string;
@@ -99,6 +171,12 @@ export type BrowserMsg = {
   name?: string;
   command?: string;
   cwd?: string;
+  mode?: 'pty' | 'acp';
+  blocks?: AcpContentBlock[];
+  requestId?: string;
+  optionId?: string | null;
+  modeId?: string;
+  sessionId?: string;
   path?: string;
   paths?: string[];
   includeUntracked?: boolean;

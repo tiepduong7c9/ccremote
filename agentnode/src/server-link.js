@@ -7,6 +7,7 @@ const path = require('path');
 const WebSocket = require('ws');
 const { encode, MessageParser } = require('./protocol');
 const WorkspaceManager = require('./workspace-manager');
+const { getUsageDetail } = require('./usage');
 
 const pkg = require('../package.json');
 
@@ -35,9 +36,27 @@ class ServerLink {
     this._connect();
   }
 
+  // Poll account/usage and push to the server: once on connect, then every 15m.
+  _startUsagePolling() {
+    this._pushUsage();
+    if (this._usageTimer) clearInterval(this._usageTimer);
+    this._usageTimer = setInterval(() => this._pushUsage(), 15 * 60 * 1000);
+  }
+
+  _stopUsagePolling() {
+    if (this._usageTimer) { clearInterval(this._usageTimer); this._usageTimer = null; }
+  }
+
+  _pushUsage() {
+    getUsageDetail()
+      .then(({ account, usage }) => this._send({ type: 'usage', account, usage }))
+      .catch(() => {});
+  }
+
   stop() {
     this._stopped = true;
     if (this._retryTimer) clearTimeout(this._retryTimer);
+    this._stopUsagePolling();
     if (this._ws) {
       this._ws.removeAllListeners();
       this._ws.close();
@@ -73,6 +92,7 @@ class ServerLink {
         version: pkg.version,
       });
       this._send({ type: 'sessions', sessions: this._manager.list() });
+      this._startUsagePolling();
     });
 
     ws.on('message', (raw) => {
@@ -82,6 +102,7 @@ class ServerLink {
     ws.on('close', () => {
       if (this._stopped) return;
       this._ws = null;
+      this._stopUsagePolling();
       // Detach all current attachments from manager
       for (const [, att] of this._attachments) {
         try { this._manager.detach(att.sid, att.listener); } catch (_) {}
@@ -114,6 +135,21 @@ class ServerLink {
     }
   }
 
+  // Listener that forwards session events for one attachment (aid) to the server.
+  // Handles both PTY byte streams and structured ACP events.
+  _relayListener(aid, sid) {
+    return (event) => {
+      if (event.type === 'data') {
+        this._send({ type: 'data', aid, sid, data: event.data.toString('base64') });
+      } else if (event.type === 'exit') {
+        this._send({ type: 'session_exit', sid, code: event.code });
+        this._attachments.delete(aid);
+      } else if (typeof event.type === 'string' && event.type.startsWith('acp_')) {
+        this._send({ type: 'acp_event', aid, sid, event });
+      }
+    };
+  }
+
   _handleMessage(msg) {
     switch (msg.type) {
       case 'welcome':
@@ -139,14 +175,7 @@ class ServerLink {
           break;
         }
 
-        const listener = (event) => {
-          if (event.type === 'data') {
-            this._send({ type: 'data', aid, sid: meta.id, data: event.data.toString('base64') });
-          } else if (event.type === 'exit') {
-            this._send({ type: 'session_exit', sid: meta.id, code: event.code });
-            this._attachments.delete(aid);
-          }
-        };
+        const listener = this._relayListener(aid, meta.id);
 
         const result = this._manager.attach(meta.id, listener);
         if (!result) {
@@ -155,6 +184,24 @@ class ServerLink {
         }
 
         this._attachments.set(aid, { sid: meta.id, listener });
+
+        // ACP sessions replay structured thread history instead of raw scrollback.
+        if (result.meta.mode === 'acp') {
+          const snap = result.acp || { events: [], claudeStatus: undefined, acpSessionId: null };
+          this._send({
+            type: 'acp_history',
+            aid,
+            sid: meta.id,
+            events: snap.events,
+            claudeStatus: snap.claudeStatus,
+            acpSessionId: snap.acpSessionId,
+            modeState: snap.modeState,
+            availableCommands: snap.availableCommands,
+            model: snap.model,
+          });
+          this._send({ type: 'attached', aid, sid: meta.id, session: result.meta });
+          break;
+        }
 
         // Replay scrollback so the browser has prior history to scroll back through.
         // For Claude sessions the browser also sends a double SIGWINCH after 'attached'
@@ -201,28 +248,21 @@ class ServerLink {
       }
 
       case 'create': {
-        const { aid, name, cwd, cols, rows, parentSid } = msg;
+        const { aid, name, cwd, cols, rows, parentSid, mode } = msg;
         // If parentSid is set this is a bash tab — use the user's shell and
         // mark it transient so it is never persisted and dies on shutdown.
         const isBashTab = !!parentSid;
         const command = msg.command || (isBashTab ? (process.env.SHELL || 'bash') : 'claude');
         let meta;
         try {
-          meta = this._manager.create({ name, command, cwd, cols, rows, parentSid, transient: isBashTab });
+          meta = this._manager.create({ name, command, cwd, cols, rows, parentSid, transient: isBashTab, mode });
         } catch (err) {
           this._send({ type: 'server_error', aid, message: err.message });
           break;
         }
 
         // Auto-attach the requesting aid
-        const listener = (event) => {
-          if (event.type === 'data') {
-            this._send({ type: 'data', aid, sid: meta.id, data: event.data.toString('base64') });
-          } else if (event.type === 'exit') {
-            this._send({ type: 'session_exit', sid: meta.id, code: event.code });
-            this._attachments.delete(aid);
-          }
-        };
+        const listener = this._relayListener(aid, meta.id);
         const result = this._manager.attach(meta.id, listener);
         if (result) {
           this._attachments.set(aid, { sid: meta.id, listener });
@@ -230,10 +270,72 @@ class ServerLink {
 
         this._send({ type: 'session_created', session: meta });
         if (result) {
+          if (result.meta.mode === 'acp') {
+            const snap = result.acp || { events: [], claudeStatus: undefined, acpSessionId: null };
+            this._send({ type: 'acp_history', aid, sid: meta.id, events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState, availableCommands: snap.availableCommands, model: snap.model });
+          }
           this._send({ type: 'attached', aid, sid: meta.id, session: meta });
         }
         break;
       }
+
+      case 'acp_prompt': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.prompt(att.sid, msg.blocks);
+        break;
+      }
+
+      case 'acp_cancel': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.cancelPrompt(att.sid);
+        break;
+      }
+
+      case 'acp_permission_response': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.resolvePermission(att.sid, msg.requestId, msg.optionId);
+        break;
+      }
+
+      case 'acp_set_mode': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.setMode(att.sid, msg.modeId);
+        break;
+      }
+
+      case 'acp_list_conversations': {
+        const att = this._attachments.get(msg.aid);
+        if (att) {
+          this._manager.listConversations(att.sid)
+            .then(conversations => this._send({ type: 'acp_conversations_result', aid: msg.aid, conversations }))
+            .catch(() => this._send({ type: 'acp_conversations_result', aid: msg.aid, conversations: [] }));
+        }
+        break;
+      }
+
+      case 'acp_new_conversation': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.newConversation(att.sid);
+        break;
+      }
+
+      case 'acp_resume_conversation': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.resumeConversation(att.sid, msg.sessionId);
+        break;
+      }
+
+      case 'acp_usage_detail': {
+        const { aid } = msg;
+        getUsageDetail()
+          .then(({ account, usage }) => this._send({ type: 'acp_usage_detail_result', aid, account, usage }))
+          .catch(() => this._send({ type: 'acp_usage_detail_result', aid, account: null, usage: null }));
+        break;
+      }
+
+      case 'usage_refresh':
+        this._pushUsage();
+        break;
 
       case 'kill': {
         const ok = this._manager.kill(msg.sid);

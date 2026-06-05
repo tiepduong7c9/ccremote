@@ -10,7 +10,7 @@ class AgentnodeHub extends EventEmitter {
   }
 
   register(record, ws) {
-    const entry = { ws, record, sessions: [], hostname: null, platform: null };
+    const entry = { ws, record, sessions: [], hostname: null, platform: null, usage: null };
     this.online.set(record.id, entry);
     this.emit('online', { anid: record.id, name: record.name });
     return entry;
@@ -37,6 +37,11 @@ class AgentnodeHub extends EventEmitter {
         this.emit('sessions', { anid: record.id, sessions: entry.sessions });
         break;
 
+      case 'usage':
+        entry.usage = { account: msg.account || null, usage: msg.usage || null };
+        this.emit('usage', { anid: record.id, ...entry.usage });
+        break;
+
       case 'session_created':
         if (msg.session) {
           entry.sessions = [...entry.sessions.filter(s => s.id !== msg.session.id), msg.session];
@@ -59,6 +64,10 @@ class AgentnodeHub extends EventEmitter {
       case 'attached':
       case 'scrollback':
       case 'data':
+      case 'acp_event':
+      case 'acp_history':
+      case 'acp_conversations_result':
+      case 'acp_usage_detail_result':
       case 'session_exit':
       case 'image_uploaded':
       case 'server_error':
@@ -106,6 +115,7 @@ class AgentnodeHub extends EventEmitter {
       hostname: entry.hostname,
       platform: entry.platform,
       sessions: entry.sessions,
+      usage: entry.usage,
       online: true,
     }));
   }
