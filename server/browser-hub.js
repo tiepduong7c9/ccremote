@@ -86,6 +86,7 @@ class BrowserHub {
       case 'acp_cancel':
       case 'acp_permission_response':
       case 'acp_set_mode':
+      case 'acp_set_model':
       case 'acp_list_conversations':
       case 'acp_new_conversation':
       case 'acp_resume_conversation':

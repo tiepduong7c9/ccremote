@@ -66,6 +66,9 @@ export type AcpUpdate =
 export interface AcpSessionMode { id: string; name: string; description?: string | null }
 export interface AcpModeState { currentModeId: string; availableModes: AcpSessionMode[] }
 
+export interface AcpModelInfo { id: string; name: string; description?: string | null }
+export interface AcpModelState { currentModelId: string; availableModels: AcpModelInfo[] }
+
 export interface AcpConversation { sessionId: string; title: string | null; mtime: number }
 
 export interface AcpCommand { name: string; description: string; input?: { hint: string } | null }
@@ -102,7 +105,7 @@ export type AcpEvent = (
   | { type: 'acp_mode'; modeState: AcpModeState | null }
   | { type: 'acp_reset'; acpSessionId: string | null }
   | { type: 'acp_commands'; commands: AcpCommand[] }
-  | { type: 'acp_model'; model: string | null }
+  | { type: 'acp_model'; model: string | null; modelState?: AcpModelState | null }
 ) & { seq?: number };
 
 export interface Skill {
@@ -133,7 +136,7 @@ export type ServerMsg =
   | { type: 'attached'; anid: string; aid: string; sid: string; session: SessionMeta }
   | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string; redraw?: boolean }
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
-  | { type: 'acp_history'; anid: string; aid: string; sid: string; events: AcpEvent[]; claudeStatus?: 'working' | 'waiting' | 'idle'; acpSessionId: string | null; modeState?: AcpModeState | null; availableCommands?: AcpCommand[]; model?: string | null }
+  | { type: 'acp_history'; anid: string; aid: string; sid: string; events: AcpEvent[]; claudeStatus?: 'working' | 'waiting' | 'idle'; acpSessionId: string | null; modeState?: AcpModeState | null; availableCommands?: AcpCommand[]; model?: string | null; modelState?: AcpModelState | null }
   | { type: 'acp_event'; anid: string; aid: string; sid: string; event: AcpEvent }
   | { type: 'acp_conversations_result'; anid: string; aid: string; conversations: AcpConversation[] }
   | { type: 'acp_usage_detail_result'; anid: string; aid: string; account: AcpAccount | null; usage: AcpUsageData | null }
@@ -161,7 +164,7 @@ export type ServerMsg =
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'acp_prompt' | 'acp_cancel' | 'acp_permission_response' | 'acp_set_mode' | 'acp_list_conversations' | 'acp_new_conversation' | 'acp_resume_conversation' | 'acp_usage_detail' | 'usage_refresh' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'acp_prompt' | 'acp_cancel' | 'acp_permission_response' | 'acp_set_mode' | 'acp_set_model' | 'acp_list_conversations' | 'acp_new_conversation' | 'acp_resume_conversation' | 'acp_usage_detail' | 'usage_refresh' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
   anid: string;
   aid?: string;
   sid?: string;
@@ -176,6 +179,7 @@ export type BrowserMsg = {
   requestId?: string;
   optionId?: string | null;
   modeId?: string;
+  modelId?: string;
   sessionId?: string;
   path?: string;
   paths?: string[];

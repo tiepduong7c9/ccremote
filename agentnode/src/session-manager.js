@@ -343,6 +343,11 @@ class SessionManager {
     if (session && session.acp) session.acp.setMode(modeId);
   }
 
+  setModel(id, modelId) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.setModel(modelId);
+  }
+
   listConversations(id) {
     const session = this._sessions.get(id);
     return session && session.acp ? session.acp.listConversations() : Promise.resolve([]);

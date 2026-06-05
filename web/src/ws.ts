@@ -173,7 +173,7 @@ class BrowserSocket {
       }
 
       case 'acp_history':
-        useAcpStore.getState().setHistory(msg.sid, msg.events, msg.claudeStatus, msg.acpSessionId, msg.modeState, msg.availableCommands, msg.model);
+        useAcpStore.getState().setHistory(msg.sid, msg.events, msg.claudeStatus, msg.acpSessionId, msg.modeState, msg.availableCommands, msg.model, msg.modelState);
         break;
 
       case 'acp_event':
@@ -517,6 +517,10 @@ class BrowserSocket {
 
   acpSetMode(anid: string, aid: string, modeId: string) {
     this.send({ type: 'acp_set_mode', anid, aid, modeId });
+  }
+
+  acpSetModel(anid: string, aid: string, modelId: string) {
+    this.send({ type: 'acp_set_model', anid, aid, modelId });
   }
 
   acpListConversations(anid: string, aid: string, cb: (conversations: AcpConversation[]) => void) {

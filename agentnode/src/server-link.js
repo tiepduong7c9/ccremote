@@ -198,6 +198,7 @@ class ServerLink {
             modeState: snap.modeState,
             availableCommands: snap.availableCommands,
             model: snap.model,
+            modelState: snap.modelState,
           });
           this._send({ type: 'attached', aid, sid: meta.id, session: result.meta });
           break;
@@ -300,6 +301,12 @@ class ServerLink {
       case 'acp_set_mode': {
         const att = this._attachments.get(msg.aid);
         if (att) this._manager.setMode(att.sid, msg.modeId);
+        break;
+      }
+
+      case 'acp_set_model': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.setModel(att.sid, msg.modelId);
         break;
       }
 

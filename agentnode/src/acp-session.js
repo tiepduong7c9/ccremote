@@ -48,7 +48,8 @@ class AcpSession {
     this.acpSessionId = null;
     this.modeState = null;           // { currentModeId, availableModes:[{id,name,description}] }
     this.availableCommands = [];     // [{ name, description, input? }] — slash commands
-    this.model = null;               // current model id, read from the transcript
+    this.model = null;               // current model id (from configOptions, transcript fallback)
+    this.modelState = null;          // { currentModelId, availableModels:[{id,name,description}] }
     this.alive = false;
 
     this._conn = null;
@@ -121,12 +122,15 @@ class AcpSession {
       this.acpSessionId = resumeSessionId;
       const res = await this._conn.loadSession({ sessionId: resumeSessionId, cwd: this.cwd, mcpServers: [] });
       if (res && res.modes) this.modeState = res.modes;
+      if (res) this._applyConfigOptions(res.configOptions);
     } else {
       const res = await this._conn.newSession({ cwd: this.cwd, mcpServers: [] });
       this.acpSessionId = res.sessionId;
       if (res.modes) this.modeState = res.modes;
+      this._applyConfigOptions(res.configOptions);
     }
     this._emitMode();
+    this._emitModel();
     this._refreshModel();
     return this.acpSessionId;
   }
@@ -158,6 +162,29 @@ class AcpSession {
     this._emit({ type: 'acp_mode', modeState: this.modeState });
   }
 
+  _emitModel() {
+    this._emit({ type: 'acp_model', model: this.model, modelState: this.modelState });
+  }
+
+  // Pull the model selector out of the adapter's configOptions (the authoritative
+  // source for the current model and the list of selectable ones). Options may be
+  // a flat array or grouped (`{ group, options }`); flatten either shape.
+  _applyConfigOptions(configOptions) {
+    if (!Array.isArray(configOptions)) return;
+    const opt = configOptions.find(o => o && o.type === 'select' && (o.id === 'model' || o.category === 'model'));
+    if (!opt) return;
+    const flat = [];
+    for (const o of (opt.options || [])) {
+      if (o && Array.isArray(o.options)) flat.push(...o.options);
+      else if (o) flat.push(o);
+    }
+    this.modelState = {
+      currentModelId: opt.currentValue,
+      availableModels: flat.map(o => ({ id: o.value, name: o.name, description: o.description == null ? null : o.description })),
+    };
+    if (opt.currentValue) this.model = opt.currentValue;
+  }
+
   _onUpdate(params) {
     const update = params.update;
     // Mode changes (incl. ones the agent makes autonomously) update state and
@@ -165,6 +192,13 @@ class AcpSession {
     if (update && update.sessionUpdate === 'current_mode_update') {
       if (this.modeState) this.modeState.currentModeId = update.currentModeId;
       this._emitMode();
+      return;
+    }
+    // Config option changes (incl. model switches the agent makes autonomously)
+    // refresh the model state and surface it as a transient acp_model event.
+    if (update && update.sessionUpdate === 'config_option_update') {
+      this._applyConfigOptions(update.configOptions);
+      this._emitModel();
       return;
     }
     // Slash-command catalog — metadata, surfaced as acp_commands (not a thread entry).
@@ -187,6 +221,21 @@ class AcpSession {
       this._emitMode();
     } catch (err) {
       this._emit({ type: 'acp_error', message: `Failed to set mode: ${err && err.message ? err.message : err}` });
+    }
+  }
+
+  async setModel(modelId) {
+    await this.ready();
+    if (!this._conn || !this.acpSessionId) return;
+    try {
+      // The response carries the full configOptions set (changing the model can
+      // shift the available modes/effort levels), so re-apply from it.
+      const res = await this._conn.setSessionConfigOption({ sessionId: this.acpSessionId, configId: 'model', value: modelId });
+      if (res && res.configOptions) this._applyConfigOptions(res.configOptions);
+      else { if (this.modelState) this.modelState.currentModelId = modelId; this.model = modelId; }
+      this._emitModel();
+    } catch (err) {
+      this._emit({ type: 'acp_error', message: `Failed to set model: ${err && err.message ? err.message : err}` });
     }
   }
 
@@ -271,7 +320,9 @@ class AcpSession {
     this.acpSessionId = res.sessionId;
     if (res.modes) this.modeState = res.modes;
     this._resetThread();
+    this._applyConfigOptions(res.configOptions); // after reset — reset nulls this.model
     this._emitMode();
+    this._emitModel();
   }
 
   // Resume a prior conversation by id (like `claude --resume`); the adapter
@@ -284,6 +335,7 @@ class AcpSession {
     try {
       const res = await this._conn.loadSession({ sessionId, cwd: this.cwd, mcpServers: [] });
       if (res && res.modes) { this.modeState = res.modes; this._emitMode(); }
+      if (res) { this._applyConfigOptions(res.configOptions); this._emitModel(); }
       this._refreshModel();
     } catch (err) {
       this._emit({ type: 'acp_error', message: `Failed to resume conversation: ${err && err.message ? err.message : err}` });
@@ -319,7 +371,8 @@ class AcpSession {
         if (o.type === 'assistant' && o.message && o.message.model && o.message.model !== '<synthetic>') {
           if (o.message.model !== this.model) {
             this.model = o.message.model;
-            this._emit({ type: 'acp_model', model: this.model });
+            if (this.modelState) this.modelState.currentModelId = this.model;
+            this._emitModel();
           }
           return;
         }
@@ -388,6 +441,7 @@ class AcpSession {
       modeState: this.modeState,
       availableCommands: this.availableCommands,
       model: this.model,
+      modelState: this.modelState,
     };
   }
 

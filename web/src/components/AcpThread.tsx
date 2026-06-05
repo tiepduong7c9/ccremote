@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen } from 'lucide-react';
+import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen, Cpu } from 'lucide-react';
 import { browserSocket } from '../ws';
 import { useTerminalStore } from '../store';
 import { useAcpStore } from '../acp-store';
 import UsageModal, { type UsageDetail } from './UsageModal';
-import type { AcpCommand, AcpContentBlock, AcpConversation, AcpEvent, AcpModeState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent } from '../lib/protocol';
+import type { AcpCommand, AcpContentBlock, AcpConversation, AcpEvent, AcpModeState, AcpModelState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent } from '../lib/protocol';
 
 // Claude brand coral, used for the focus ring and send button (matches the
 // Claude Code GUI). Kept as a literal so Tailwind's JIT emits the classes.
@@ -181,6 +181,54 @@ function ModeSelector({ modeState, onSelect }: { modeState: AcpModeState | null;
   );
 }
 
+function ModelSelector({ modelState, onSelect }: { modelState: AcpModelState; onSelect: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  const current = modelState.availableModels.find(m => m.id === modelState.currentModelId);
+  const label = current?.name ?? modelLabel(modelState.currentModelId) ?? modelState.currentModelId;
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-[11px] text-base-content/60 hover:text-base-content px-1.5 py-1 rounded-lg hover:bg-base-200 transition-colors whitespace-nowrap"
+        onClick={() => setOpen(o => !o)}
+        title="Change model"
+      >
+        <Cpu size={12} className="text-base-content/50" />
+        <span>{label}</span>
+        <ChevronDown size={11} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 mb-2 w-72 bg-base-100 border border-base-300 rounded-xl shadow-lg overflow-hidden z-50 py-1">
+          {modelState.availableModels.map(m => {
+            const active = m.id === modelState.currentModelId;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className={`w-full text-left px-3 py-2 transition-colors ${active ? 'bg-base-200' : 'hover:bg-base-200'}`}
+                onClick={() => { if (!active) onSelect(m.id); setOpen(false); }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{m.name}</span>
+                  {active && <Check size={13} style={{ color: CORAL }} className="ml-auto shrink-0" />}
+                </div>
+                {m.description && <div className="text-[11px] text-base-content/50 mt-0.5 leading-snug">{m.description}</div>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCard({ item }: { item: Extract<ThreadItem, { kind: 'tool' }> }) {
   const [open, setOpen] = useState(false);
   const statusColor = item.status === 'completed' ? 'text-success'
@@ -293,6 +341,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const thread = useAcpStore(s => s.threads.get(sid));
   const resolvePermissionLocal = useAcpStore(s => s.resolvePermissionLocal);
   const setModeLocal = useAcpStore(s => s.setModeLocal);
+  const setModelLocal = useAcpStore(s => s.setModelLocal);
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
   const [cmdIndex, setCmdIndex] = useState(0);
@@ -339,6 +388,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const working = thread?.claudeStatus === 'working';
   const waiting = thread?.claudeStatus === 'waiting';
   const model = modelLabel(thread?.model);
+  const modelState = thread?.modelState ?? null;
 
   // Context-window usage % from the latest usage_update.
   const contextPct = useMemo(() => {
@@ -372,11 +422,13 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     setDraft('');
   };
 
-  const acceptCommand = (cmd: AcpCommand) => {
+  // runIfNoArgs=false (Tab) always completes "/name " into the box so the user can
+  // type arguments; runIfNoArgs=true (Enter) runs commands that take no arguments.
+  const acceptCommand = (cmd: AcpCommand, runIfNoArgs = true) => {
     setCmdDismissed(true);
-    if (cmd.name === 'usage') { openUsage(); setDraft(''); return; }
-    if (cmd.input?.hint) {
-      // Command takes arguments — drop "/name " in the box so the user can type them.
+    if (runIfNoArgs && cmd.name === 'usage') { openUsage(); setDraft(''); return; }
+    if (!runIfNoArgs || cmd.input?.hint) {
+      // Drop "/name " in the box so the user can type arguments before sending.
       setDraft(`/${cmd.name} `);
       requestAnimationFrame(() => { const el = taRef.current; if (el) { el.focus(); autoGrow(el); } });
     } else {
@@ -564,7 +616,8 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                 if (showPalette) {
                   if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex(i => (i + 1) % cmdMatches.length); return; }
                   if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex(i => (i - 1 + cmdMatches.length) % cmdMatches.length); return; }
-                  if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); acceptCommand(cmdMatches[cmdIndex] || cmdMatches[0]); return; }
+                  if (e.key === 'Enter') { e.preventDefault(); acceptCommand(cmdMatches[cmdIndex] || cmdMatches[0], true); return; }
+                  if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); acceptCommand(cmdMatches[cmdIndex] || cmdMatches[0], false); return; }
                   if (e.key === 'Escape') { e.preventDefault(); setCmdDismissed(true); return; }
                 }
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -576,7 +629,14 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                   modeState={thread?.modeState ?? null}
                   onSelect={(id) => { browserSocket.acpSetMode(anid, aidRef.current, id); setModeLocal(sid, id); }}
                 />
-                {model && <span className="text-[11px] text-base-content/50 whitespace-nowrap">{model}</span>}
+                {modelState && modelState.availableModels.length > 0 ? (
+                  <ModelSelector
+                    modelState={modelState}
+                    onSelect={(id) => { browserSocket.acpSetModel(anid, aidRef.current, id); setModelLocal(sid, id); }}
+                  />
+                ) : (
+                  model && <span className="text-[11px] text-base-content/50 whitespace-nowrap">{model}</span>
+                )}
                 {contextPct != null && (
                   <span className="text-[11px] text-base-content/40 whitespace-nowrap" title="Context window used">{contextPct}% context</span>
                 )}
