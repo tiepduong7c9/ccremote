@@ -150,7 +150,7 @@ function ModeSelector({ modeState, onSelect }: { modeState: AcpModeState | null;
         type="button"
         className="flex items-center gap-1.5 text-xs text-base-content/70 hover:text-base-content px-2 py-1 rounded-lg hover:bg-base-200 transition-colors"
         onClick={() => setOpen(o => !o)}
-        title="Change permission mode"
+        title="Change permission mode (Shift+Tab to cycle)"
       >
         <Zap size={13} style={{ color: CORAL }} />
         <span className="font-medium">{current?.name ?? modeState.currentModeId}</span>
@@ -392,9 +392,24 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     resolvePermissionLocal(sid, requestId, optionId);
   };
 
+  // Shift+Tab cycles the permission mode (mirrors the Claude Code TUI).
+  const cycleMode = () => {
+    const ms = thread?.modeState;
+    if (!ms || !ms.availableModes.length) return;
+    const idx = ms.availableModes.findIndex(m => m.id === ms.currentModeId);
+    const next = ms.availableModes[(idx + 1) % ms.availableModes.length];
+    browserSocket.acpSetMode(anid, aidRef.current, next.id);
+    setModeLocal(sid, next.id);
+  };
+
   return (
     <div
-      className="relative w-full h-full flex flex-col bg-base-100"
+      className="relative w-full h-full flex flex-col bg-base-100 outline-none"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        // Shift+Tab cycles the permission mode anywhere the panel has focus.
+        if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); cycleMode(); }
+      }}
       style={visible ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
     >
       <ChatHeader anid={anid} sid={sid} aid={aidRef.current} />
@@ -544,10 +559,12 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
               onBlur={() => setFocused(false)}
               onChange={e => { setDraft(e.target.value); setCmdDismissed(false); autoGrow(e.target); }}
               onKeyDown={e => {
+                // Shift+Tab (mode cycle) is handled by the panel root via bubbling.
+                if (e.key === 'Tab' && e.shiftKey) return;
                 if (showPalette) {
                   if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIndex(i => (i + 1) % cmdMatches.length); return; }
                   if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIndex(i => (i - 1 + cmdMatches.length) % cmdMatches.length); return; }
-                  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); acceptCommand(cmdMatches[cmdIndex] || cmdMatches[0]); return; }
+                  if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) { e.preventDefault(); acceptCommand(cmdMatches[cmdIndex] || cmdMatches[0]); return; }
                   if (e.key === 'Escape') { e.preventDefault(); setCmdDismissed(true); return; }
                 }
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
