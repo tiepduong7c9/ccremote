@@ -44,6 +44,7 @@ class AcpSession {
     this.history = [];               // ordered thread events for replay on attach
     this.claudeStatus = undefined;   // undefined = idle/never-prompted (green), like PTY
     this.acpSessionId = null;
+    this.modeState = null;           // { currentModeId, availableModes:[{id,name,description}] }
     this.alive = false;
 
     this._conn = null;
@@ -114,11 +115,14 @@ class AcpSession {
 
     if (resumeSessionId && this._loadSupported) {
       this.acpSessionId = resumeSessionId;
-      await this._conn.loadSession({ sessionId: resumeSessionId, cwd: this.cwd, mcpServers: [] });
+      const res = await this._conn.loadSession({ sessionId: resumeSessionId, cwd: this.cwd, mcpServers: [] });
+      if (res && res.modes) this.modeState = res.modes;
     } else {
       const res = await this._conn.newSession({ cwd: this.cwd, mcpServers: [] });
       this.acpSessionId = res.sessionId;
+      if (res.modes) this.modeState = res.modes;
     }
+    this._emitMode();
     return this.acpSessionId;
   }
 
@@ -145,10 +149,34 @@ class AcpSession {
     this._emit({ type: 'acp_status', claudeStatus: status });
   }
 
+  _emitMode() {
+    this._emit({ type: 'acp_mode', modeState: this.modeState });
+  }
+
   _onUpdate(params) {
-    const item = { type: 'acp_update', update: params.update };
+    const update = params.update;
+    // Mode changes (incl. ones the agent makes autonomously) update state and
+    // are surfaced as a transient acp_mode event rather than a thread entry.
+    if (update && update.sessionUpdate === 'current_mode_update') {
+      if (this.modeState) this.modeState.currentModeId = update.currentModeId;
+      this._emitMode();
+      return;
+    }
+    const item = { type: 'acp_update', update };
     this._pushHistory(item);
     this._emit(item);
+  }
+
+  async setMode(modeId) {
+    await this.ready();
+    if (!this._conn || !this.acpSessionId) return;
+    try {
+      await this._conn.setSessionMode({ sessionId: this.acpSessionId, modeId });
+      if (this.modeState) this.modeState.currentModeId = modeId;
+      this._emitMode();
+    } catch (err) {
+      this._emit({ type: 'acp_error', message: `Failed to set mode: ${err && err.message ? err.message : err}` });
+    }
   }
 
   _onPermission(params) {
@@ -219,6 +247,7 @@ class AcpSession {
       events: this.history,
       claudeStatus: this.claudeStatus,
       acpSessionId: this.acpSessionId,
+      modeState: this.modeState,
     };
   }
 

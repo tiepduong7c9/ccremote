@@ -63,6 +63,9 @@ export type AcpUpdate =
   | { sessionUpdate: 'plan'; entries: AcpPlanEntry[] }
   | { sessionUpdate: string; [k: string]: unknown };
 
+export interface AcpSessionMode { id: string; name: string; description?: string | null }
+export interface AcpModeState { currentModeId: string; availableModes: AcpSessionMode[] }
+
 export interface AcpPermissionOption { optionId: string; name: string; kind?: string }
 export interface AcpPermissionRequest { options: AcpPermissionOption[]; toolCall?: { title?: string; kind?: string; content?: AcpToolContent[]; [k: string]: unknown }; [k: string]: unknown }
 
@@ -73,6 +76,7 @@ export type AcpEvent = (
   | { type: 'acp_stop'; stopReason: string }
   | { type: 'acp_error'; message: string }
   | { type: 'acp_status'; claudeStatus?: 'working' | 'waiting' | 'idle' }
+  | { type: 'acp_mode'; modeState: AcpModeState | null }
 ) & { seq?: number };
 
 export interface Skill {
@@ -101,7 +105,7 @@ export type ServerMsg =
   | { type: 'attached'; anid: string; aid: string; sid: string; session: SessionMeta }
   | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string; redraw?: boolean }
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
-  | { type: 'acp_history'; anid: string; aid: string; sid: string; events: AcpEvent[]; claudeStatus?: 'working' | 'waiting' | 'idle'; acpSessionId: string | null }
+  | { type: 'acp_history'; anid: string; aid: string; sid: string; events: AcpEvent[]; claudeStatus?: 'working' | 'waiting' | 'idle'; acpSessionId: string | null; modeState?: AcpModeState | null }
   | { type: 'acp_event'; anid: string; aid: string; sid: string; event: AcpEvent }
   | { type: 'session_exit'; anid: string; sid: string; code: number }
   | { type: 'image_uploaded'; anid: string; aid: string; path: string }
@@ -127,7 +131,7 @@ export type ServerMsg =
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'acp_prompt' | 'acp_cancel' | 'acp_permission_response' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'acp_prompt' | 'acp_cancel' | 'acp_permission_response' | 'acp_set_mode' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
   anid: string;
   aid?: string;
   sid?: string;
@@ -141,6 +145,7 @@ export type BrowserMsg = {
   blocks?: AcpContentBlock[];
   requestId?: string;
   optionId?: string | null;
+  modeId?: string;
   path?: string;
   paths?: string[];
   includeUntracked?: boolean;

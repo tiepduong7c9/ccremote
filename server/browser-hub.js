@@ -82,6 +82,7 @@ class BrowserHub {
       case 'acp_prompt':
       case 'acp_cancel':
       case 'acp_permission_response':
+      case 'acp_set_mode':
         this._hub.send(anid, msg);
         break;
 

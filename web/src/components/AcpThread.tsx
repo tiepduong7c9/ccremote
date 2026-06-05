@@ -2,11 +2,23 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight } from 'lucide-react';
+import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check } from 'lucide-react';
 import { browserSocket } from '../ws';
 import { useTerminalStore } from '../store';
 import { useAcpStore } from '../acp-store';
-import type { AcpContentBlock, AcpEvent, AcpPlanEntry, AcpPermissionRequest, AcpToolContent } from '../lib/protocol';
+import type { AcpContentBlock, AcpEvent, AcpModeState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent } from '../lib/protocol';
+
+// Claude brand coral, used for the focus ring and send button (matches the
+// Claude Code GUI). Kept as a literal so Tailwind's JIT emits the classes.
+const CORAL = '#c96442';
+
+function ClaudeMark({ size = 28 }: { size?: number }) {
+  return (
+    <svg height={size} width={size} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path clipRule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill={CORAL} fillRule="evenodd" />
+    </svg>
+  );
+}
 
 interface Props {
   anid: string;
@@ -120,6 +132,54 @@ function ToolContentView({ content }: { content: AcpToolContent[] }) {
   );
 }
 
+function ModeSelector({ modeState, onSelect }: { modeState: AcpModeState | null; onSelect: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  if (!modeState) return null;
+  const current = modeState.availableModes.find(m => m.id === modeState.currentModeId);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-xs text-base-content/70 hover:text-base-content px-2 py-1 rounded-lg hover:bg-base-200 transition-colors"
+        onClick={() => setOpen(o => !o)}
+        title="Change permission mode"
+      >
+        <Zap size={13} style={{ color: CORAL }} />
+        <span className="font-medium">{current?.name ?? modeState.currentModeId}</span>
+        <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 mb-2 w-72 bg-base-100 border border-base-300 rounded-xl shadow-lg overflow-hidden z-50 py-1">
+          {modeState.availableModes.map(m => {
+            const active = m.id === modeState.currentModeId;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className={`w-full text-left px-3 py-2 transition-colors ${active ? 'bg-base-200' : 'hover:bg-base-200'}`}
+                onClick={() => { if (!active) onSelect(m.id); setOpen(false); }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{m.name}</span>
+                  {active && <Check size={13} style={{ color: CORAL }} className="ml-auto shrink-0" />}
+                </div>
+                {m.description && <div className="text-[11px] text-base-content/50 mt-0.5 leading-snug">{m.description}</div>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCard({ item }: { item: Extract<ThreadItem, { kind: 'tool' }> }) {
   const [open, setOpen] = useState(false);
   const statusColor = item.status === 'completed' ? 'text-success'
@@ -148,9 +208,18 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const removeAttachment = useTerminalStore(s => s.removeAttachment);
   const thread = useAcpStore(s => s.threads.get(sid));
   const resolvePermissionLocal = useAcpStore(s => s.resolvePermissionLocal);
+  const setModeLocal = useAcpStore(s => s.setModeLocal);
   const [draft, setDraft] = useState('');
+  const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Grow the textarea with its content (up to a cap), like the Claude Code GUI.
+  const autoGrow = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
 
   useEffect(() => {
     const aid = aidRef.current;
@@ -192,17 +261,23 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
       style={visible ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
     >
       {/* Thread */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
-        {items.length === 0 && (
-          <div className="text-center text-base-content/40 text-sm py-10">
-            Send a message to start the conversation.
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        {items.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3">
+            <ClaudeMark size={30} />
+            <div className="text-lg font-medium text-base-content/80">You've come to the absolutely right place!</div>
+            <div className="text-sm text-base-content/45 max-w-sm">
+              Ask Claude to edit, run, or explain anything in this repo. Tool calls and
+              permission requests appear inline.
+            </div>
           </div>
-        )}
+        ) : (
+          <div className="max-w-3xl mx-auto w-full px-4 py-6 flex flex-col gap-4">
         {items.map(item => {
           switch (item.kind) {
             case 'user':
               return (
-                <div key={item.id} className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-primary text-primary-content px-3.5 py-2 text-sm whitespace-pre-wrap break-words">
+                <div key={item.id} className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-base-200 border border-base-300 px-3.5 py-2 text-sm whitespace-pre-wrap break-words">
                   {item.text}
                 </div>
               );
@@ -284,36 +359,63 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
             <span className="loading loading-dots loading-sm" /> working…
           </div>
         )}
+          </div>
+        )}
       </div>
 
       {/* Composer */}
-      <div className="shrink-0 border-t border-base-300 bg-base-200 p-3">
-        {waiting && (
-          <div className="text-[11px] text-warning mb-2 flex items-center gap-1">
-            <ShieldQuestion size={12} /> Claude is waiting for your permission above.
-          </div>
-        )}
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={taRef}
-            className="textarea textarea-bordered flex-1 resize-none text-sm min-h-[2.5rem] max-h-40"
-            rows={1}
-            value={draft}
-            placeholder="Message Claude…"
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-            }}
-          />
-          {working ? (
-            <button className="btn btn-square btn-error" title="Stop" onClick={() => browserSocket.acpCancel(anid, aidRef.current)}>
-              <Square size={16} />
-            </button>
-          ) : (
-            <button className="btn btn-square btn-primary" title="Send" disabled={!draft.trim()} onClick={send}>
-              <Send size={16} />
-            </button>
+      <div className="shrink-0 px-4 pb-4 pt-2 bg-base-100">
+        <div className="max-w-3xl mx-auto w-full">
+          {waiting && (
+            <div className="text-[11px] mb-2 flex items-center gap-1" style={{ color: CORAL }}>
+              <ShieldQuestion size={12} /> Claude is waiting for your permission above.
+            </div>
           )}
+          <div
+            className="rounded-2xl border border-base-300 bg-base-100 transition-shadow"
+            style={focused ? { borderColor: CORAL, boxShadow: `0 0 0 3px ${CORAL}22` } : undefined}
+          >
+            <textarea
+              ref={taRef}
+              className="w-full bg-transparent resize-none outline-none text-sm px-4 pt-3 pb-1.5 leading-relaxed"
+              rows={1}
+              style={{ minHeight: '2.75rem', maxHeight: '200px' }}
+              value={draft}
+              placeholder="Reply to Claude…"
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              onChange={e => { setDraft(e.target.value); autoGrow(e.target); }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+              }}
+            />
+            <div className="flex items-center justify-between gap-2 px-2 pb-2">
+              <ModeSelector
+                modeState={thread?.modeState ?? null}
+                onSelect={(id) => { browserSocket.acpSetMode(anid, aidRef.current, id); setModeLocal(sid, id); }}
+              />
+              {working ? (
+                <button
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white"
+                  style={{ background: CORAL }}
+                  title="Stop"
+                  onClick={() => browserSocket.acpCancel(anid, aidRef.current)}
+                >
+                  <Square size={15} />
+                </button>
+              ) : (
+                <button
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white transition-opacity disabled:opacity-30"
+                  style={{ background: CORAL }}
+                  title="Send"
+                  disabled={!draft.trim()}
+                  onClick={send}
+                >
+                  <ArrowUp size={16} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

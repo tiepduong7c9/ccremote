@@ -333,6 +333,11 @@ class SessionManager {
     if (session && session.acp) session.acp.resolvePermission(requestId, optionId);
   }
 
+  setMode(id, modeId) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.setMode(modeId);
+  }
+
   rename(id, name) {
     const meta = this.resolve(id);
     if (!meta) return null;

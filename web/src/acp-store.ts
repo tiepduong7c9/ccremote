@@ -1,38 +1,44 @@
 import { create } from 'zustand';
-import type { AcpEvent } from './lib/protocol';
+import type { AcpEvent, AcpModeState } from './lib/protocol';
 
 export interface AcpThreadState {
   events: AcpEvent[];
   claudeStatus?: 'working' | 'waiting' | 'idle';
   acpSessionId: string | null;
+  modeState?: AcpModeState | null;
   lastSeq: number; // highest event seq applied — used to dedupe fan-out
 }
 
 interface AcpStore {
   // keyed by session id (sid)
   threads: Map<string, AcpThreadState>;
-  setHistory: (sid: string, events: AcpEvent[], claudeStatus: AcpThreadState['claudeStatus'], acpSessionId: string | null) => void;
+  setHistory: (sid: string, events: AcpEvent[], claudeStatus: AcpThreadState['claudeStatus'], acpSessionId: string | null, modeState?: AcpModeState | null) => void;
   appendEvent: (sid: string, event: AcpEvent) => void;
   resolvePermissionLocal: (sid: string, requestId: string, optionId: string | null) => void;
+  setModeLocal: (sid: string, modeId: string) => void;
   clear: (sid: string) => void;
 }
 
 export const useAcpStore = create<AcpStore>((set) => ({
   threads: new Map(),
 
-  setHistory: (sid, events, claudeStatus, acpSessionId) => set((s) => {
+  setHistory: (sid, events, claudeStatus, acpSessionId, modeState) => set((s) => {
     const threads = new Map(s.threads);
     const lastSeq = events.reduce((m, e) => (typeof e.seq === 'number' && e.seq > m ? e.seq : m), -1);
-    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, lastSeq });
+    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, lastSeq });
     return { threads };
   }),
 
   appendEvent: (sid, event) => set((s) => {
     const threads = new Map(s.threads);
-    const prev = threads.get(sid) ?? { events: [], claudeStatus: undefined, acpSessionId: null, lastSeq: -1 };
-    // Status updates carry no seq and are idempotent.
+    const prev = threads.get(sid) ?? { events: [], claudeStatus: undefined, acpSessionId: null, modeState: null, lastSeq: -1 };
+    // Status & mode updates carry no seq and are idempotent.
     if (event.type === 'acp_status') {
       threads.set(sid, { ...prev, claudeStatus: event.claudeStatus });
+      return { threads };
+    }
+    if (event.type === 'acp_mode') {
+      threads.set(sid, { ...prev, modeState: event.modeState });
       return { threads };
     }
     // Drop duplicates fanned out from multiple attachments to the same session.
@@ -52,6 +58,14 @@ export const useAcpStore = create<AcpStore>((set) => ({
         : e
     );
     threads.set(sid, { ...prev, events });
+    return { threads };
+  }),
+
+  setModeLocal: (sid, modeId) => set((s) => {
+    const threads = new Map(s.threads);
+    const prev = threads.get(sid);
+    if (!prev || !prev.modeState) return {};
+    threads.set(sid, { ...prev, modeState: { ...prev.modeState, currentModeId: modeId } });
     return { threads };
   }),
 

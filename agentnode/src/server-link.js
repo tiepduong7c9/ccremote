@@ -174,6 +174,7 @@ class ServerLink {
             events: snap.events,
             claudeStatus: snap.claudeStatus,
             acpSessionId: snap.acpSessionId,
+            modeState: snap.modeState,
           });
           this._send({ type: 'attached', aid, sid: meta.id, session: result.meta });
           break;
@@ -248,7 +249,7 @@ class ServerLink {
         if (result) {
           if (result.meta.mode === 'acp') {
             const snap = result.acp || { events: [], claudeStatus: undefined, acpSessionId: null };
-            this._send({ type: 'acp_history', aid, sid: meta.id, events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId });
+            this._send({ type: 'acp_history', aid, sid: meta.id, events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState });
           }
           this._send({ type: 'attached', aid, sid: meta.id, session: meta });
         }
@@ -270,6 +271,12 @@ class ServerLink {
       case 'acp_permission_response': {
         const att = this._attachments.get(msg.aid);
         if (att) this._manager.resolvePermission(att.sid, msg.requestId, msg.optionId);
+        break;
+      }
+
+      case 'acp_set_mode': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.setMode(att.sid, msg.modeId);
         break;
       }
 
