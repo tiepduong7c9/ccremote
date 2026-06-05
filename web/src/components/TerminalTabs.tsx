@@ -4,6 +4,7 @@ import { Plus, X, TerminalSquare, Image as ImageIcon } from 'lucide-react';
 import { useRegistryStore, useTerminalStore } from '../store';
 import { browserSocket } from '../ws';
 import TerminalPanel from './Terminal';
+import AcpThread from './AcpThread';
 import type { SessionMeta } from '../lib/protocol';
 
 interface Props {
@@ -166,11 +167,19 @@ export default function TerminalTabs({ anid, parentSid }: Props) {
             className="absolute inset-0"
             style={tab.id === resolvedActive ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
           >
-            <TerminalPanel
-              anid={anid}
-              sid={tab.id}
-              visible={tab.id === resolvedActive}
-            />
+            {tab.mode === 'acp' ? (
+              <AcpThread
+                anid={anid}
+                sid={tab.id}
+                visible={tab.id === resolvedActive}
+              />
+            ) : (
+              <TerminalPanel
+                anid={anid}
+                sid={tab.id}
+                visible={tab.id === resolvedActive}
+              />
+            )}
           </div>
         ))}
       </div>

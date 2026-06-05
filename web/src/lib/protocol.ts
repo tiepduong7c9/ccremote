@@ -32,12 +32,48 @@ export interface SessionMeta {
   name: string;
   cwd: string;
   command: string;
+  mode?: 'pty' | 'acp';
   status: 'running' | 'suspended' | 'exited';
   claudeStatus?: 'working' | 'waiting' | 'idle';
   parentSid?: string;
   createdAt: string;
   lastAttachedAt: string | null;
 }
+
+// ── ACP (Agent Client Protocol) thread types ────────────────────────────────
+export type AcpContentBlock = { type: 'text'; text: string } | { type: string; [k: string]: unknown };
+
+export interface AcpToolContent {
+  type: string; // 'content' | 'diff' | ...
+  content?: AcpContentBlock;
+  path?: string;
+  oldText?: string | null;
+  newText?: string;
+  [k: string]: unknown;
+}
+
+export interface AcpPlanEntry { content: string; priority?: string; status?: string }
+
+export type AcpUpdate =
+  | { sessionUpdate: 'agent_message_chunk'; content: AcpContentBlock }
+  | { sessionUpdate: 'agent_thought_chunk'; content: AcpContentBlock }
+  | { sessionUpdate: 'user_message_chunk'; content: AcpContentBlock }
+  | { sessionUpdate: 'tool_call'; toolCallId: string; title?: string; kind?: string; status?: string; content?: AcpToolContent[] }
+  | { sessionUpdate: 'tool_call_update'; toolCallId: string; status?: string; title?: string; content?: AcpToolContent[] }
+  | { sessionUpdate: 'plan'; entries: AcpPlanEntry[] }
+  | { sessionUpdate: string; [k: string]: unknown };
+
+export interface AcpPermissionOption { optionId: string; name: string; kind?: string }
+export interface AcpPermissionRequest { options: AcpPermissionOption[]; toolCall?: { title?: string; kind?: string; content?: AcpToolContent[]; [k: string]: unknown }; [k: string]: unknown }
+
+export type AcpEvent = (
+  | { type: 'acp_user'; blocks: AcpContentBlock[] }
+  | { type: 'acp_update'; update: AcpUpdate }
+  | { type: 'acp_permission'; requestId: string; request: AcpPermissionRequest; resolved?: string }
+  | { type: 'acp_stop'; stopReason: string }
+  | { type: 'acp_error'; message: string }
+  | { type: 'acp_status'; claudeStatus?: 'working' | 'waiting' | 'idle' }
+) & { seq?: number };
 
 export interface Skill {
   id: string;
@@ -65,6 +101,8 @@ export type ServerMsg =
   | { type: 'attached'; anid: string; aid: string; sid: string; session: SessionMeta }
   | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string; redraw?: boolean }
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
+  | { type: 'acp_history'; anid: string; aid: string; sid: string; events: AcpEvent[]; claudeStatus?: 'working' | 'waiting' | 'idle'; acpSessionId: string | null }
+  | { type: 'acp_event'; anid: string; aid: string; sid: string; event: AcpEvent }
   | { type: 'session_exit'; anid: string; sid: string; code: number }
   | { type: 'image_uploaded'; anid: string; aid: string; path: string }
   | { type: 'git_repos'; anid: string; aid: string; repos: GitRepo[] }
@@ -89,7 +127,7 @@ export type ServerMsg =
   | { type: 'server_error'; anid?: string; aid?: string; message: string };
 
 export type BrowserMsg = {
-  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
+  type: 'attach' | 'detach' | 'input' | 'resize' | 'create' | 'kill' | 'rename' | 'upload_image' | 'acp_prompt' | 'acp_cancel' | 'acp_permission_response' | 'git_status' | 'git_diff' | 'git_pull' | 'git_revert' | 'git_log' | 'git_list_branches' | 'git_checkout' | 'file_list' | 'file_list_dir' | 'file_read' | 'file_write' | 'file_delete' | 'file_download' | 'file_upload_chunk' | 'claude_md_read' | 'claude_md_write' | 'skill_inject';
   anid: string;
   aid?: string;
   sid?: string;
@@ -99,6 +137,10 @@ export type BrowserMsg = {
   name?: string;
   command?: string;
   cwd?: string;
+  mode?: 'pty' | 'acp';
+  blocks?: AcpContentBlock[];
+  requestId?: string;
+  optionId?: string | null;
   path?: string;
   paths?: string[];
   includeUntracked?: boolean;

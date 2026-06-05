@@ -59,6 +59,8 @@ class AgentnodeHub extends EventEmitter {
       case 'attached':
       case 'scrollback':
       case 'data':
+      case 'acp_event':
+      case 'acp_history':
       case 'session_exit':
       case 'image_uploaded':
       case 'server_error':

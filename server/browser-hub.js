@@ -76,7 +76,13 @@ class BrowserHub {
 
       case 'create':
         this.attachments.set(aid, { ws, anid, sid: null });
-        this._hub.send(anid, { type: 'create', aid, name: msg.name, command: msg.command, cwd: msg.cwd, cols: msg.cols, rows: msg.rows, parentSid: msg.parentSid });
+        this._hub.send(anid, { type: 'create', aid, name: msg.name, command: msg.command, cwd: msg.cwd, cols: msg.cols, rows: msg.rows, parentSid: msg.parentSid, mode: msg.mode });
+        break;
+
+      case 'acp_prompt':
+      case 'acp_cancel':
+      case 'acp_permission_response':
+        this._hub.send(anid, msg);
         break;
 
       case 'kill':

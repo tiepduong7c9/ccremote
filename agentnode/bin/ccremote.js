@@ -17,6 +17,7 @@ program
   .alias('n')
   .description('Create a new session (and attach by default)')
   .option('--no-attach', 'Create without attaching')
+  .option('--acp', 'Use the Agent Client Protocol (structured chat, browser-only)')
   .option('--cmd <command>', 'Command to run inside the session', 'claude')
   .option('--cwd <path>', 'Working directory for the session')
   .action(async (name, opts) => {
@@ -29,6 +30,7 @@ program
         cwd: opts.cwd || process.cwd(),
         cols: process.stdout.columns || 220,
         rows: process.stdout.rows || 50,
+        ...(opts.acp && { mode: 'acp' }),
       });
       session = res.session;
     } catch (err) {
@@ -38,6 +40,14 @@ program
     }
 
     console.error(chalk.green('✔ Created session'), chalk.bold(session.id), chalk.dim(`name=${session.name}`));
+
+    // ACP sessions render as a structured chat in the browser, not a raw terminal,
+    // so there's nothing to attach to from the CLI.
+    if (opts.acp) {
+      console.error(chalk.dim('  ACP session — open it in the ccremote web UI to chat.'));
+      client.close();
+      return;
+    }
 
     if (opts.attach === false) {
       client.close();

@@ -16,6 +16,8 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
 import type { GitCommit, GitFileChange, GitRepo, ServerMsg, SessionMeta } from './lib/protocol';
 import { notificationsEnabled } from './lib/notifications';
 import { useRegistryStore, useTerminalStore, useToastStore } from './store';
+import { useAcpStore } from './acp-store';
+import type { AcpContentBlock } from './lib/protocol';
 
 class MessageParser {
   private buf = '';
@@ -163,6 +165,14 @@ class BrowserSocket {
         if (term) term.write(b64ToBytes(msg.data));
         break;
       }
+
+      case 'acp_history':
+        useAcpStore.getState().setHistory(msg.sid, msg.events, msg.claudeStatus, msg.acpSessionId);
+        break;
+
+      case 'acp_event':
+        useAcpStore.getState().appendEvent(msg.sid, msg.event);
+        break;
 
       case 'session_exit':
         this.knownStatus.delete(msg.sid);
@@ -471,8 +481,20 @@ class BrowserSocket {
     this.send({ type: 'resize', anid, aid, cols, rows });
   }
 
-  create(anid: string, aid: string, opts: { name?: string; command?: string; cwd?: string; cols: number; rows: number; parentSid?: string }) {
+  create(anid: string, aid: string, opts: { name?: string; command?: string; cwd?: string; cols: number; rows: number; parentSid?: string; mode?: 'pty' | 'acp' }) {
     this.send({ type: 'create', anid, aid, ...opts });
+  }
+
+  acpPrompt(anid: string, aid: string, blocks: AcpContentBlock[]) {
+    this.send({ type: 'acp_prompt', anid, aid, blocks });
+  }
+
+  acpCancel(anid: string, aid: string) {
+    this.send({ type: 'acp_cancel', anid, aid });
+  }
+
+  acpPermissionResponse(anid: string, aid: string, requestId: string, optionId: string | null) {
+    this.send({ type: 'acp_permission_response', anid, aid, requestId, optionId });
   }
 
   kill(anid: string, sid: string) {
