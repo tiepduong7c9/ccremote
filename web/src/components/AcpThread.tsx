@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check } from 'lucide-react';
+import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen } from 'lucide-react';
 import { browserSocket } from '../ws';
 import { useTerminalStore } from '../store';
 import { useAcpStore } from '../acp-store';
-import type { AcpContentBlock, AcpEvent, AcpModeState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent } from '../lib/protocol';
+import type { AcpContentBlock, AcpConversation, AcpEvent, AcpModeState, AcpPlanEntry, AcpPermissionRequest, AcpToolContent } from '../lib/protocol';
 
 // Claude brand coral, used for the focus ring and send button (matches the
 // Claude Code GUI). Kept as a literal so Tailwind's JIT emits the classes.
@@ -202,6 +202,80 @@ function ToolCard({ item }: { item: Extract<ThreadItem, { kind: 'tool' }> }) {
   );
 }
 
+function relTime(ms: number): string {
+  const diff = Date.now() - ms;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+// Floating top-right controls on the chat panel (like the Claude Code GUI):
+// a "resume conversation" picker (like `claude --resume`) and a "new
+// conversation" button. Both act on the underlying Claude conversation within
+// this same ccremote session.
+function ChatHeader({ anid, sid, aid }: { anid: string; sid: string; aid: string }) {
+  const currentConvId = useAcpStore(s => s.threads.get(sid)?.acpSessionId ?? null);
+  const [open, setOpen] = useState(false);
+  const [convs, setConvs] = useState<AcpConversation[] | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) { setConvs(null); browserSocket.acpListConversations(anid, aid, setConvs); }
+  };
+
+  return (
+    <div ref={ref} className="absolute top-2 right-3 z-20 flex items-center gap-0.5">
+      <button className="btn btn-ghost btn-sm btn-square" title="Resume a conversation" onClick={toggle}>
+        <Clock size={16} />
+      </button>
+      <button
+        className="btn btn-ghost btn-sm btn-square"
+        title="New conversation"
+        onClick={() => browserSocket.acpNewConversation(anid, aid)}
+      >
+        <SquarePen size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-80 max-h-96 overflow-y-auto bg-base-100 border border-base-300 rounded-xl shadow-lg z-50 py-1">
+            <div className="px-3 py-1.5 text-[11px] uppercase tracking-wider text-base-content/40 font-semibold">Resume conversation</div>
+            {convs === null && <div className="px-3 py-4 flex justify-center"><span className="loading loading-spinner loading-sm" /></div>}
+            {convs && convs.length === 0 && <div className="px-3 py-3 text-sm text-base-content/40">No past conversations</div>}
+            {convs && convs.map(c => {
+              const active = c.sessionId === currentConvId;
+              return (
+                <button
+                  key={c.sessionId}
+                  className={`w-full text-left px-3 py-2 transition-colors ${active ? 'bg-base-200' : 'hover:bg-base-200'}`}
+                  onClick={() => { if (!active) browserSocket.acpResumeConversation(anid, aid, c.sessionId); setOpen(false); }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="truncate flex-1 text-sm">{c.title || 'Untitled conversation'}</span>
+                    {active && <Check size={13} style={{ color: CORAL }} className="shrink-0" />}
+                  </div>
+                  <div className="text-[11px] text-base-content/40">{relTime(c.mtime)}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+    </div>
+  );
+}
+
 export default function AcpThread({ anid, sid, visible = true }: Props) {
   const aidRef = useRef<string>(nanoid(8));
   const setAttachment = useTerminalStore(s => s.setAttachment);
@@ -257,9 +331,11 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
 
   return (
     <div
-      className="w-full h-full flex flex-col bg-base-100"
+      className="relative w-full h-full flex flex-col bg-base-100"
       style={visible ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
     >
+      <ChatHeader anid={anid} sid={sid} aid={aidRef.current} />
+
       {/* Thread */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {items.length === 0 ? (

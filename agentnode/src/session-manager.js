@@ -181,6 +181,11 @@ class SessionManager {
           else meta.claudeStatus = next;
           this._persist();
         }
+      } else if (event.type === 'acp_reset') {
+        // Conversation switched (new/resume) — pin the new id and clear status.
+        meta.acpSessionId = event.acpSessionId;
+        delete meta.claudeStatus;
+        this._persist();
       } else if (event.type === 'exit') {
         // The adapter process exited — keep the session resumable via loadSession.
         if (meta.status === 'running') meta.status = 'suspended';
@@ -336,6 +341,21 @@ class SessionManager {
   setMode(id, modeId) {
     const session = this._sessions.get(id);
     if (session && session.acp) session.acp.setMode(modeId);
+  }
+
+  listConversations(id) {
+    const session = this._sessions.get(id);
+    return session && session.acp ? session.acp.listConversations() : Promise.resolve([]);
+  }
+
+  newConversation(id) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.newConversation().catch(() => {});
+  }
+
+  resumeConversation(id, sessionId) {
+    const session = this._sessions.get(id);
+    if (session && session.acp) session.acp.resumeConversation(sessionId).catch(() => {});
   }
 
   rename(id, name) {

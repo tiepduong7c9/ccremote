@@ -177,6 +177,22 @@ function startDaemon() {
           if (attachedId) manager.setMode(attachedId, msg.modeId);
           break;
 
+        case 'acp_list_conversations':
+          if (attachedId) {
+            manager.listConversations(attachedId)
+              .then(conversations => send({ type: 'acp_conversations_result', conversations }))
+              .catch(() => send({ type: 'acp_conversations_result', conversations: [] }));
+          }
+          break;
+
+        case 'acp_new_conversation':
+          if (attachedId) manager.newConversation(attachedId);
+          break;
+
+        case 'acp_resume_conversation':
+          if (attachedId) manager.resumeConversation(attachedId, msg.sessionId);
+          break;
+
         default:
           send({ type: 'server_error', message: `Unknown command: ${msg.type}` });
       }

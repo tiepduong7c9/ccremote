@@ -18,6 +18,8 @@
 
 const { spawn } = require('child_process');
 const { Writable, Readable } = require('stream');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { nanoid } = require('nanoid');
 
@@ -239,6 +241,91 @@ class AcpSession {
     if (this._conn && this.acpSessionId) {
       Promise.resolve(this._conn.cancel({ sessionId: this.acpSessionId })).catch(() => {});
     }
+  }
+
+  // ── Conversation management (Claude-style new / resume) ───────────────────
+  // Clears the live thread and tells listeners to start fresh.
+  _resetThread() {
+    this.history = [];
+    this._seq = 0;
+    this.claudeStatus = undefined;
+    this._emit({ type: 'acp_reset', acpSessionId: this.acpSessionId });
+  }
+
+  // Start a brand new conversation in the same cwd (like running `claude`).
+  async newConversation() {
+    await this.ready();
+    if (!this._conn) return;
+    const res = await this._conn.newSession({ cwd: this.cwd, mcpServers: [] });
+    this.acpSessionId = res.sessionId;
+    if (res.modes) this.modeState = res.modes;
+    this._resetThread();
+    this._emitMode();
+  }
+
+  // Resume a prior conversation by id (like `claude --resume`); the adapter
+  // streams the whole conversation back, which rebuilds the thread.
+  async resumeConversation(sessionId) {
+    await this.ready();
+    if (!this._conn) return;
+    this.acpSessionId = sessionId;
+    this._resetThread();
+    try {
+      const res = await this._conn.loadSession({ sessionId, cwd: this.cwd, mcpServers: [] });
+      if (res && res.modes) { this.modeState = res.modes; this._emitMode(); }
+    } catch (err) {
+      this._emit({ type: 'acp_error', message: `Failed to resume conversation: ${err && err.message ? err.message : err}` });
+    }
+  }
+
+  // Claude stores per-project conversation logs under ~/.claude/projects/<enc cwd>.
+  _projectDir() {
+    const enc = this.cwd.replace(/[^a-zA-Z0-9]/g, '-');
+    return path.join(os.homedir(), '.claude', 'projects', enc);
+  }
+
+  async listConversations() {
+    const dir = this._projectDir();
+    let files;
+    try { files = await fs.promises.readdir(dir); } catch (_) { return []; }
+    const out = [];
+    for (const f of files) {
+      if (!f.endsWith('.jsonl')) continue;
+      const full = path.join(dir, f);
+      let stat;
+      try { stat = await fs.promises.stat(full); } catch (_) { continue; }
+      if (!stat.size) continue;
+      out.push({ sessionId: f.replace(/\.jsonl$/, ''), title: await this._readTitle(full), mtime: stat.mtimeMs });
+    }
+    out.sort((a, b) => b.mtime - a.mtime);
+    return out;
+  }
+
+  // Read just the head of a log to derive a human title (first real user line).
+  async _readTitle(file) {
+    let fd;
+    try {
+      fd = await fs.promises.open(file, 'r');
+      const buf = Buffer.alloc(65536);
+      const { bytesRead } = await fd.read(buf, 0, buf.length, 0);
+      const text = buf.slice(0, bytesRead).toString('utf8');
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue;
+        let o;
+        try { o = JSON.parse(line); } catch (_) { continue; }
+        if (o.type === 'summary' && o.summary) return String(o.summary).slice(0, 80);
+        if (o.type === 'user' && o.message) {
+          const c = o.message.content;
+          const t = typeof c === 'string' ? c : (Array.isArray(c) ? ((c.find(x => x.type === 'text') || {}).text || '') : '');
+          if (t && !t.startsWith('<')) return t.replace(/\s+/g, ' ').slice(0, 80);
+        }
+      }
+    } catch (_) {
+      // ignore — title is best-effort
+    } finally {
+      if (fd) await fd.close().catch(() => {});
+    }
+    return null;
   }
 
   // Snapshot for attach replay.

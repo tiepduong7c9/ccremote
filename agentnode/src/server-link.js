@@ -280,6 +280,28 @@ class ServerLink {
         break;
       }
 
+      case 'acp_list_conversations': {
+        const att = this._attachments.get(msg.aid);
+        if (att) {
+          this._manager.listConversations(att.sid)
+            .then(conversations => this._send({ type: 'acp_conversations_result', aid: msg.aid, conversations }))
+            .catch(() => this._send({ type: 'acp_conversations_result', aid: msg.aid, conversations: [] }));
+        }
+        break;
+      }
+
+      case 'acp_new_conversation': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.newConversation(att.sid);
+        break;
+      }
+
+      case 'acp_resume_conversation': {
+        const att = this._attachments.get(msg.aid);
+        if (att) this._manager.resumeConversation(att.sid, msg.sessionId);
+        break;
+      }
+
       case 'kill': {
         const ok = this._manager.kill(msg.sid);
         if (ok) {

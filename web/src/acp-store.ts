@@ -41,6 +41,11 @@ export const useAcpStore = create<AcpStore>((set) => ({
       threads.set(sid, { ...prev, modeState: event.modeState });
       return { threads };
     }
+    // Conversation switched (new/resume): wipe the thread and start fresh.
+    if (event.type === 'acp_reset') {
+      threads.set(sid, { ...prev, events: [], lastSeq: -1, claudeStatus: undefined, acpSessionId: event.acpSessionId });
+      return { threads };
+    }
     // Drop duplicates fanned out from multiple attachments to the same session.
     if (typeof event.seq === 'number' && event.seq <= prev.lastSeq) return {};
     const lastSeq = typeof event.seq === 'number' ? event.seq : prev.lastSeq;
