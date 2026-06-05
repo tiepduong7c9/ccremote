@@ -277,6 +277,15 @@ function ChatHeader({ anid, sid, aid }: { anid: string; sid: string; aid: string
   );
 }
 
+function modelLabel(id?: string | null): string | null {
+  if (!id) return null;
+  const lower = id.toLowerCase();
+  const fam = lower.includes('opus') ? 'Opus' : lower.includes('sonnet') ? 'Sonnet' : lower.includes('haiku') ? 'Haiku' : null;
+  if (!fam) return id;
+  const ver = id.match(/(\d+)-(\d+)/);
+  return ver ? `${fam} ${ver[1]}.${ver[2]}` : fam;
+}
+
 export default function AcpThread({ anid, sid, visible = true }: Props) {
   const aidRef = useRef<string>(nanoid(8));
   const setAttachment = useTerminalStore(s => s.setAttachment);
@@ -329,6 +338,20 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const items = useMemo(() => buildThread(thread?.events ?? []), [thread?.events]);
   const working = thread?.claudeStatus === 'working';
   const waiting = thread?.claudeStatus === 'waiting';
+  const model = modelLabel(thread?.model);
+
+  // Context-window usage % from the latest usage_update.
+  const contextPct = useMemo(() => {
+    const evs = thread?.events ?? [];
+    for (let i = evs.length - 1; i >= 0; i--) {
+      const e = evs[i];
+      if (e.type === 'acp_update' && (e.update as { sessionUpdate?: string }).sessionUpdate === 'usage_update') {
+        const u = e.update as unknown as { used?: number; size?: number };
+        if (u.size) return Math.round(((u.used ?? 0) / u.size) * 100);
+      }
+    }
+    return null;
+  }, [thread?.events]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -531,10 +554,16 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
               }}
             />
             <div className="flex items-center justify-between gap-2 px-2 pb-2">
-              <ModeSelector
-                modeState={thread?.modeState ?? null}
-                onSelect={(id) => { browserSocket.acpSetMode(anid, aidRef.current, id); setModeLocal(sid, id); }}
-              />
+              <div className="flex items-center gap-2 min-w-0">
+                <ModeSelector
+                  modeState={thread?.modeState ?? null}
+                  onSelect={(id) => { browserSocket.acpSetMode(anid, aidRef.current, id); setModeLocal(sid, id); }}
+                />
+                {model && <span className="text-[11px] text-base-content/50 whitespace-nowrap">{model}</span>}
+                {contextPct != null && (
+                  <span className="text-[11px] text-base-content/40 whitespace-nowrap" title="Context window used">{contextPct}% context</span>
+                )}
+              </div>
               {working ? (
                 <button
                   className="w-8 h-8 rounded-full flex items-center justify-center text-white"

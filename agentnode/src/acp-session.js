@@ -48,6 +48,7 @@ class AcpSession {
     this.acpSessionId = null;
     this.modeState = null;           // { currentModeId, availableModes:[{id,name,description}] }
     this.availableCommands = [];     // [{ name, description, input? }] — slash commands
+    this.model = null;               // current model id, read from the transcript
     this.alive = false;
 
     this._conn = null;
@@ -126,6 +127,7 @@ class AcpSession {
       if (res.modes) this.modeState = res.modes;
     }
     this._emitMode();
+    this._refreshModel();
     return this.acpSessionId;
   }
 
@@ -234,6 +236,7 @@ class AcpSession {
       this._pushHistory(stop);
       this._emit(stop);
       this._setStatus('idle');
+      this._scheduleModelRefresh();
       return res;
     } catch (err) {
       const errItem = { type: 'acp_error', message: err && err.message ? err.message : String(err) };
@@ -256,6 +259,7 @@ class AcpSession {
     this.history = [];
     this._seq = 0;
     this.claudeStatus = undefined;
+    this.model = null;
     this._emit({ type: 'acp_reset', acpSessionId: this.acpSessionId });
   }
 
@@ -280,8 +284,48 @@ class AcpSession {
     try {
       const res = await this._conn.loadSession({ sessionId, cwd: this.cwd, mcpServers: [] });
       if (res && res.modes) { this.modeState = res.modes; this._emitMode(); }
+      this._refreshModel();
     } catch (err) {
       this._emit({ type: 'acp_error', message: `Failed to resume conversation: ${err && err.message ? err.message : err}` });
+    }
+  }
+
+  // The transcript's assistant line (with the model) is flushed slightly after
+  // the prompt result returns, so retry a couple times after a turn.
+  _scheduleModelRefresh() {
+    this._refreshModel();
+    setTimeout(() => this._refreshModel(), 1000);
+    setTimeout(() => this._refreshModel(), 3000);
+  }
+
+  // The current model isn't exposed over ACP — read the latest assistant
+  // message's model from the conversation transcript and emit acp_model.
+  async _refreshModel() {
+    if (!this.acpSessionId) return;
+    try {
+      const file = path.join(this._projectDir(), `${this.acpSessionId}.jsonl`);
+      const stat = await fs.promises.stat(file).catch(() => null);
+      if (!stat || !stat.size) return;
+      const start = Math.max(0, stat.size - 1024 * 1024);
+      const fd = await fs.promises.open(file, 'r');
+      const buf = Buffer.alloc(stat.size - start);
+      await fd.read(buf, 0, buf.length, start);
+      await fd.close();
+      const lines = buf.toString('utf8').split('\n');
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (!lines[i].includes('"model"')) continue;
+        let o;
+        try { o = JSON.parse(lines[i]); } catch (_) { continue; }
+        if (o.type === 'assistant' && o.message && o.message.model && o.message.model !== '<synthetic>') {
+          if (o.message.model !== this.model) {
+            this.model = o.message.model;
+            this._emit({ type: 'acp_model', model: this.model });
+          }
+          return;
+        }
+      }
+    } catch (_) {
+      // best-effort
     }
   }
 
@@ -343,6 +387,7 @@ class AcpSession {
       acpSessionId: this.acpSessionId,
       modeState: this.modeState,
       availableCommands: this.availableCommands,
+      model: this.model,
     };
   }
 

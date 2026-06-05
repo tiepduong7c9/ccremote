@@ -173,7 +173,7 @@ class BrowserSocket {
       }
 
       case 'acp_history':
-        useAcpStore.getState().setHistory(msg.sid, msg.events, msg.claudeStatus, msg.acpSessionId, msg.modeState, msg.availableCommands);
+        useAcpStore.getState().setHistory(msg.sid, msg.events, msg.claudeStatus, msg.acpSessionId, msg.modeState, msg.availableCommands, msg.model);
         break;
 
       case 'acp_event':

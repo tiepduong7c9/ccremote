@@ -7,13 +7,14 @@ export interface AcpThreadState {
   acpSessionId: string | null;
   modeState?: AcpModeState | null;
   availableCommands?: AcpCommand[];
+  model?: string | null;
   lastSeq: number; // highest event seq applied — used to dedupe fan-out
 }
 
 interface AcpStore {
   // keyed by session id (sid)
   threads: Map<string, AcpThreadState>;
-  setHistory: (sid: string, events: AcpEvent[], claudeStatus: AcpThreadState['claudeStatus'], acpSessionId: string | null, modeState?: AcpModeState | null, availableCommands?: AcpCommand[]) => void;
+  setHistory: (sid: string, events: AcpEvent[], claudeStatus: AcpThreadState['claudeStatus'], acpSessionId: string | null, modeState?: AcpModeState | null, availableCommands?: AcpCommand[], model?: string | null) => void;
   appendEvent: (sid: string, event: AcpEvent) => void;
   resolvePermissionLocal: (sid: string, requestId: string, optionId: string | null) => void;
   setModeLocal: (sid: string, modeId: string) => void;
@@ -23,10 +24,10 @@ interface AcpStore {
 export const useAcpStore = create<AcpStore>((set) => ({
   threads: new Map(),
 
-  setHistory: (sid, events, claudeStatus, acpSessionId, modeState, availableCommands) => set((s) => {
+  setHistory: (sid, events, claudeStatus, acpSessionId, modeState, availableCommands, model) => set((s) => {
     const threads = new Map(s.threads);
     const lastSeq = events.reduce((m, e) => (typeof e.seq === 'number' && e.seq > m ? e.seq : m), -1);
-    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, availableCommands: availableCommands ?? [], lastSeq });
+    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, availableCommands: availableCommands ?? [], model: model ?? null, lastSeq });
     return { threads };
   }),
 
@@ -46,9 +47,13 @@ export const useAcpStore = create<AcpStore>((set) => ({
       threads.set(sid, { ...prev, availableCommands: event.commands });
       return { threads };
     }
+    if (event.type === 'acp_model') {
+      threads.set(sid, { ...prev, model: event.model });
+      return { threads };
+    }
     // Conversation switched (new/resume): wipe the thread and start fresh.
     if (event.type === 'acp_reset') {
-      threads.set(sid, { ...prev, events: [], lastSeq: -1, claudeStatus: undefined, acpSessionId: event.acpSessionId });
+      threads.set(sid, { ...prev, events: [], lastSeq: -1, claudeStatus: undefined, acpSessionId: event.acpSessionId, model: null });
       return { threads };
     }
     // Drop duplicates fanned out from multiple attachments to the same session.
