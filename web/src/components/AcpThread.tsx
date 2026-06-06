@@ -399,6 +399,10 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const [cmdIndex, setCmdIndex] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
   const [recentCmds, setRecentCmds] = useState<string[]>(loadRecentCommands);
+  // Shell-style prompt history recall (ArrowUp/ArrowDown). -1 = not navigating;
+  // the unsent draft is stashed so ArrowDown past the newest restores it.
+  const [histIndex, setHistIndex] = useState(-1);
+  const histStashRef = useRef('');
   const [showUsage, setShowUsage] = useState(false);
   const [usageDetail, setUsageDetail] = useState<UsageDetail | null>(null);
   // Pending image attachments: base64 data (no data: prefix) + mime, sent as
@@ -475,6 +479,17 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   }, [anid, sid, setAttachment, removeAttachment]);
 
   const items = useMemo(() => buildThread(thread?.events ?? []), [thread?.events]);
+  // Oldest→newest list of previously sent prompt texts, for ArrowUp/ArrowDown recall.
+  const promptHistory = useMemo(() => {
+    const out: string[] = [];
+    for (const e of thread?.events ?? []) {
+      if (e.type === 'acp_user') {
+        const t = e.blocks.map(textOf).join('').trim();
+        if (t) out.push(t);
+      }
+    }
+    return out;
+  }, [thread?.events]);
   const working = thread?.claudeStatus === 'working';
   const waiting = thread?.claudeStatus === 'waiting';
   const model = modelLabel(thread?.model);
@@ -603,6 +618,42 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     setImages([]);
     // Submitting a prompt always returns the view to the bottom.
     stickRef.current = true;
+    setHistIndex(-1);
+  };
+
+  // Walk the sent-prompt history. dir = -1 goes to older entries, +1 to newer;
+  // stepping newer past the most recent restores the stashed in-progress draft.
+  const recallHistory = (dir: -1 | 1) => {
+    if (promptHistory.length === 0) return;
+    let next: number;
+    if (histIndex === -1) {
+      if (dir === 1) return; // nothing newer than the live draft
+      histStashRef.current = draft;
+      next = promptHistory.length - 1;
+    } else {
+      next = histIndex + (dir === -1 ? -1 : 1);
+    }
+    if (next < 0) next = 0;
+    if (next >= promptHistory.length) {
+      // Past the newest entry → back to the stashed draft.
+      setHistIndex(-1);
+      setDraft(histStashRef.current);
+      moveCaretToEnd();
+      return;
+    }
+    setHistIndex(next);
+    setDraft(promptHistory[next]);
+    moveCaretToEnd();
+  };
+
+  // setDraft is async (controlled textarea); defer caret + autosize a tick.
+  const moveCaretToEnd = () => {
+    setTimeout(() => {
+      const el = taRef.current;
+      if (!el) return;
+      el.selectionStart = el.selectionEnd = el.value.length;
+      autoGrow(el);
+    }, 0);
   };
 
   // runIfNoArgs=false (Tab) always completes "/name " into the box so the user can
@@ -857,7 +908,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
               placeholder="Reply to Claude…"
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
-              onChange={e => { setDraft(e.target.value); setCmdDismissed(false); autoGrow(e.target); }}
+              onChange={e => { setDraft(e.target.value); setCmdDismissed(false); setHistIndex(-1); autoGrow(e.target); }}
               onPaste={e => {
                 const files = Array.from(e.clipboardData.items)
                   .filter(it => it.type.startsWith('image/'))
@@ -876,6 +927,17 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                   if (e.key === 'Escape') { e.preventDefault(); setCmdDismissed(true); return; }
                 }
                 if (e.key === 'Escape' && working) { e.preventDefault(); browserSocket.acpCancel(anid, aidRef.current); return; }
+                // Recall sent prompts when the caret is at the edge of the box (or
+                // already navigating), so mid-text arrow movement still works.
+                if (e.key === 'ArrowUp') {
+                  const el = e.currentTarget;
+                  const atStart = el.selectionStart === 0 && el.selectionEnd === 0;
+                  if (atStart || histIndex !== -1) { e.preventDefault(); recallHistory(-1); return; }
+                }
+                if (e.key === 'ArrowDown' && histIndex !== -1) {
+                  const el = e.currentTarget;
+                  if (el.selectionStart === el.value.length) { e.preventDefault(); recallHistory(1); return; }
+                }
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
               }}
             />
