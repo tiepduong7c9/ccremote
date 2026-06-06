@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -360,6 +360,10 @@ function modelLabel(id?: string | null): string | null {
   return ver ? `${fam} ${ver[1]}.${ver[2]}` : fam;
 }
 
+// Per-session scroll offset, kept outside the component so it survives the
+// unmount/remount that happens when switching between session cards.
+const scrollMemory = new Map<string, number>();
+
 export default function AcpThread({ anid, sid, visible = true }: Props) {
   const aidRef = useRef<string>(nanoid(8));
   const setAttachment = useTerminalStore(s => s.setAttachment);
@@ -470,9 +474,37 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     return null;
   }, [thread?.events]);
 
+  // Auto-scroll only when the user is parked at the bottom. If they've
+  // scrolled up to read history, new content won't yank them down. The
+  // offset is remembered per session (see scrollMemory) so switching away
+  // to another session card and back restores exactly where they left off.
+  const prevLenRef = useRef(0);
+  const stickRef = useRef(true);
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    scrollMemory.set(sid, el.scrollTop);
+  };
+  // On mount, restore the saved offset (or jump to the bottom on first visit).
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const saved = scrollMemory.get(sid);
+    el.scrollTop = saved ?? el.scrollHeight;
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    prevLenRef.current = items.length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Stick to the bottom for incremental updates while the user is there.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [items.length, working]);
+    const el = scrollRef.current;
+    if (!el || !stickRef.current) { prevLenRef.current = items.length; return; }
+    const jumped = items.length - prevLenRef.current > 3;
+    el.scrollTo({ top: el.scrollHeight, behavior: jumped ? 'auto' : 'smooth' });
+    scrollMemory.set(sid, el.scrollHeight);
+    prevLenRef.current = items.length;
+  }, [items.length, working, sid]);
 
   useEffect(() => {
     if (visible) taRef.current?.focus();
@@ -549,7 +581,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
       <ChatHeader anid={anid} sid={sid} aid={aidRef.current} />
 
       {/* Thread */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
         {items.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3">
             <ClaudeMark size={30} />
