@@ -364,6 +364,24 @@ function modelLabel(id?: string | null): string | null {
 // unmount/remount that happens when switching between session cards.
 const scrollMemory = new Map<string, number>();
 
+// Most-recently-used slash commands, newest first, persisted across reloads so
+// the palette surfaces what you actually reach for instead of alphabetical order.
+const RECENT_CMDS_KEY = 'ccremote.recentCommands';
+const RECENT_CMDS_MAX = 20;
+function loadRecentCommands(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_CMDS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+function recordRecentCommand(name: string) {
+  const next = [name, ...loadRecentCommands().filter(n => n !== name)].slice(0, RECENT_CMDS_MAX);
+  try { localStorage.setItem(RECENT_CMDS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+}
+
 export default function AcpThread({ anid, sid, visible = true }: Props) {
   const aidRef = useRef<string>(nanoid(8));
   const setAttachment = useTerminalStore(s => s.setAttachment);
@@ -377,6 +395,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const [focused, setFocused] = useState(false);
   const [cmdIndex, setCmdIndex] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
+  const [recentCmds, setRecentCmds] = useState<string[]>(loadRecentCommands);
   const [showUsage, setShowUsage] = useState(false);
   const [usageDetail, setUsageDetail] = useState<UsageDetail | null>(null);
   // Pending image attachments: base64 data (no data: prefix) + mime, sent as
@@ -422,8 +441,17 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const cmdMatches = useMemo(() => {
     if (slashQuery === undefined) return [];
     const q = slashQuery.toLowerCase();
-    return commands.filter(c => c.name.toLowerCase().startsWith(q)).slice(0, 8);
-  }, [slashQuery, commands]);
+    // Recently-used commands float to the top (newest first); everything else
+    // keeps the order the agent advertised them in.
+    const rank = (name: string) => {
+      const i = recentCmds.indexOf(name);
+      return i === -1 ? Infinity : i;
+    };
+    return commands
+      .filter(c => c.name.toLowerCase().startsWith(q))
+      .sort((a, b) => rank(a.name) - rank(b.name))
+      .slice(0, 8);
+  }, [slashQuery, commands, recentCmds]);
   const showPalette = cmdMatches.length > 0 && !cmdDismissed;
 
   // Grow the textarea with its content (up to a cap), like the Claude Code GUI.
@@ -578,6 +606,8 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   // type arguments; runIfNoArgs=true (Enter) runs commands that take no arguments.
   const acceptCommand = (cmd: AcpCommand, runIfNoArgs = true) => {
     setCmdDismissed(true);
+    recordRecentCommand(cmd.name);
+    setRecentCmds(loadRecentCommands());
     if (runIfNoArgs && cmd.name === 'usage') { openUsage(); setDraft(''); return; }
     if (runIfNoArgs && (cmd.name === 'clear' || cmd.name === 'new')) { newConversation(); return; }
     if (!runIfNoArgs || cmd.input?.hint) {
