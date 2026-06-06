@@ -185,7 +185,7 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
         {/* Toolbar */}
         <div className="flex items-center gap-1 px-2 h-8 border-b border-base-300 shrink-0">
           <span className="flex items-center gap-1.5 flex-1 min-w-0">
-            <span className="text-xs text-base-content/40 truncate">
+            <span className="text-xs text-base-content/60 truncate">
               {status && !status.loading && !status.error && status.files.length > 0
                 ? `${status.files.length} file${status.files.length !== 1 ? 's' : ''} changed`
                 : ''}

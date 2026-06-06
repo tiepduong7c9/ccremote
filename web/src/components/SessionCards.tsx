@@ -868,7 +868,7 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
             >
               {lastFolder && <span className="font-bold">[{lastFolder}]</span>}
               {lastFolder && ' '}
-              <span className="font-normal text-base-content/45">{s.name || s.id.slice(0, 8)}</span>
+              <span className="font-normal text-base-content/65">{s.name || s.id.slice(0, 8)}</span>
             </span>
           )}
         </div>

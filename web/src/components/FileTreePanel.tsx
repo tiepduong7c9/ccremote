@@ -63,7 +63,7 @@ function TreeNodeRow({ entry, depth, cache, onExpand, collapseRevision, selected
           onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); onDirDragEnter?.(entry.fullPath); }}
         >
           {open ? <ChevronDown size={12} className="shrink-0 text-base-content/40" /> : <ChevronRight size={12} className="shrink-0 text-base-content/40" />}
-          <span className="font-mono text-xs text-base-content/60 truncate">{entry.name}/</span>
+          <span className="font-mono text-xs text-base-content/80 truncate">{entry.name}/</span>
         </button>
         {open && children === 'loading' && (
           <div style={{ paddingLeft: `${8 + (depth + 1) * 12}px` }} className="py-1">

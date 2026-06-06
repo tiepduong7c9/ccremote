@@ -80,7 +80,7 @@ export default function App() {
               <TerminalSquare size={13} className="shrink-0 text-base-content/40" />
               <span className="text-sm text-base-content/70 truncate">{session.name}</span>
               <span
-                className="text-xs text-base-content/50 font-mono truncate hidden sm:block translate-y-0.5"
+                className="text-xs text-base-content/70 font-mono truncate hidden sm:block translate-y-0.5"
                 title={session.cwd}
               >{session.cwd}</span>
             </div>
@@ -99,7 +99,7 @@ export default function App() {
               >
                 <Zap size={13} style={{ color: '#c96442' }} />
                 <span className="text-xs tabular-nums">5h {Math.round(usageData.usage.five_hour?.utilization ?? 0)}%</span>
-                <span className="text-xs text-base-content/40 tabular-nums">7d {Math.round(usageData.usage.seven_day?.utilization ?? 0)}%</span>
+                <span className="text-xs text-base-content/60 tabular-nums">7d {Math.round(usageData.usage.seven_day?.utilization ?? 0)}%</span>
               </button>
             )}
             <button

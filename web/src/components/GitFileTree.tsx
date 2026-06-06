@@ -69,7 +69,7 @@ function TreeNodeRow({ node, depth, selectedFiles, onFileClick, onContextMenu, c
         >
           {open ? <ChevronDown size={12} className="shrink-0 text-base-content/40" /> : <ChevronRight size={12} className="shrink-0 text-base-content/40" />}
           <Folder size={12} className="shrink-0 text-base-content/40" />
-          <span className="font-mono text-xs text-base-content/60 truncate">{node.name}/</span>
+          <span className="font-mono text-xs text-base-content/80 truncate">{node.name}/</span>
         </button>
         {open && Array.from(node.children.values()).map(child => (
           <TreeNodeRow key={child.fullPath} node={child} depth={depth + 1} selectedFiles={selectedFiles} onFileClick={onFileClick} onContextMenu={onContextMenu} collapseRevision={collapseRevision} />
