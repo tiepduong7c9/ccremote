@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen, Cpu, ImagePlus, X } from 'lucide-react';
+import { ArrowUp, Square, CircleSlash, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen, Cpu, ImagePlus, X } from 'lucide-react';
 import { browserSocket } from '../ws';
 import { useTerminalStore } from '../store';
 import { useAcpStore } from '../acp-store';
@@ -35,6 +35,7 @@ type ThreadItem =
   | { kind: 'plan'; id: string; entries: AcpPlanEntry[] }
   | { kind: 'permission'; id: string; requestId: string; request: AcpPermissionRequest; resolved?: string }
   | { kind: 'notice'; id: string; text: string }
+  | { kind: 'interrupted'; id: string }
   | { kind: 'error'; id: string; message: string };
 
 // Theme-aware markdown. Colors are pinned to DaisyUI tokens (not prose's gray
@@ -118,6 +119,8 @@ function buildThread(events: AcpEvent[]): ThreadItem[] {
       }
     } else if (e.type === 'acp_permission') {
       items.push({ kind: 'permission', id: `perm${i}`, requestId: e.requestId, request: e.request, resolved: e.resolved });
+    } else if (e.type === 'acp_stop') {
+      if (e.stopReason && /cancel/i.test(e.stopReason)) items.push({ kind: 'interrupted', id: `stop${i}` });
     } else if (e.type === 'acp_notice') {
       items.push({ kind: 'notice', id: `notice${i}`, text: e.text });
     } else if (e.type === 'acp_error') {
@@ -749,6 +752,13 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                   <span>{item.text}</span>
                 </div>
               );
+            case 'interrupted':
+              return (
+                <div key={item.id} className="self-center flex items-center gap-1.5 text-[11px] my-0.5" style={{ color: CORAL }}>
+                  <CircleSlash size={11} className="shrink-0" />
+                  <span>Interrupted by user</span>
+                </div>
+              );
             case 'error':
               return (
                 <div key={item.id} className="self-start w-[85%] alert alert-error py-2 text-xs">
@@ -865,6 +875,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                   if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); acceptCommand(cmdMatches[cmdIndex] || cmdMatches[0], false); return; }
                   if (e.key === 'Escape') { e.preventDefault(); setCmdDismissed(true); return; }
                 }
+                if (e.key === 'Escape' && working) { e.preventDefault(); browserSocket.acpCancel(anid, aidRef.current); return; }
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
               }}
             />
