@@ -533,6 +533,8 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     browserSocket.acpPrompt(anid, aidRef.current, blocks);
     setDraft('');
     setImages([]);
+    // Submitting a prompt always returns the view to the bottom.
+    stickRef.current = true;
   };
 
   // runIfNoArgs=false (Tab) always completes "/name " into the box so the user can
