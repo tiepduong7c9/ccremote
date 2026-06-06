@@ -859,20 +859,17 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
             />
           ) : (
             <span
-              className="text-sm font-semibold truncate leading-tight"
+              className="text-sm truncate leading-tight"
               title={s.name || s.id}
               onDoubleClick={e => {
                 e.stopPropagation();
                 if (!isExited) { setDraft(s.name); setEditing(true); }
               }}
             >
-              {lastFolder && <span className="font-normal text-base-content/45">[{lastFolder}]</span>}
+              {lastFolder && <span className="font-bold">[{lastFolder}]</span>}
               {lastFolder && ' '}
-              {s.name || s.id.slice(0, 8)}
+              <span className="font-normal text-base-content/45">{s.name || s.id.slice(0, 8)}</span>
             </span>
-          )}
-          {s.mode === 'acp' && (
-            <span className="shrink-0 badge badge-xs badge-outline text-[9px] font-medium">chat</span>
           )}
         </div>
 
@@ -882,8 +879,13 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
           </div>
         )}
 
-        <div className="flex items-center justify-between">
-          <span className="text-[9px] text-base-content/35 font-mono leading-none">{s.id}</span>
+        <div className="flex items-baseline justify-between">
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-[9px] text-base-content/35 font-mono truncate">{s.id}</span>
+            <span className="shrink-0 badge badge-xs badge-outline text-[9px] font-medium">
+              {s.mode === 'acp' ? 'chat' : 'tui'}
+            </span>
+          </div>
           <div className="flex items-center gap-1">
             {s.status === 'running' && s.claudeStatus === 'working' && <>
               <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0 animate-pulse" />
