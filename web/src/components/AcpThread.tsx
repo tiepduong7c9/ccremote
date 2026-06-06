@@ -46,7 +46,7 @@ function Markdown({ children }: { children: string }) {
       prose-headings:text-base-content prose-p:text-base-content prose-li:text-base-content
       prose-strong:text-base-content prose-em:text-base-content prose-blockquote:text-base-content/70
       prose-a:text-primary prose-hr:border-base-300
-      prose-code:text-base-content prose-code:bg-base-300 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:font-normal prose-code:before:content-[''] prose-code:after:content-['']
+      prose-code:text-base-content prose-code:bg-base-content/10 prose-code:border prose-code:border-base-content/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:font-normal prose-code:text-[0.85em] prose-code:before:content-[''] prose-code:after:content-['']
       prose-pre:bg-base-300 prose-pre:text-base-content prose-pre:text-xs prose-pre:my-2">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
     </div>
@@ -260,17 +260,19 @@ function ToolCard({ item }: { item: Extract<ThreadItem, { kind: 'tool' }> }) {
     : 'text-warning';
   const hasContent = item.content.some(c => c.type === 'diff' || textOf(c.content));
   return (
-    <div className="rounded-lg border border-base-300 bg-base-100 text-sm">
+    <div className="rounded-md bg-base-200/40 font-mono text-xs">
       <button
-        className="w-full flex items-center gap-2 px-3 py-2 text-left"
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left focus:outline-none rounded-md hover:bg-base-200/70 transition-colors"
         onClick={() => hasContent && setOpen(o => !o)}
       >
-        {hasContent && <ChevronRight size={13} className={`shrink-0 text-base-content/40 transition-transform ${open ? 'rotate-90' : ''}`} />}
-        <Wrench size={13} className="shrink-0 text-base-content/50" />
-        <span className="font-medium truncate flex-1">{item.title}</span>
-        <span className={`text-[11px] font-medium ${statusColor}`}>{item.status}</span>
+        {hasContent
+          ? <ChevronRight size={12} className={`shrink-0 text-base-content/30 transition-transform ${open ? 'rotate-90' : ''}`} />
+          : <span className="shrink-0 w-3" />}
+        <Wrench size={12} className="shrink-0 text-base-content/40" />
+        <span className="truncate flex-1 text-base-content/70">{item.title}</span>
+        <span className={`text-[10px] ${statusColor} opacity-70`}>{item.status}</span>
       </button>
-      {open && hasContent && <div className="px-3 pb-2"><ToolContentView content={item.content} /></div>}
+      {open && hasContent && <div className="px-2.5 pb-2"><ToolContentView content={item.content} /></div>}
     </div>
   );
 }
@@ -576,7 +578,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
               );
             case 'assistant':
               return (
-                <div key={item.id} className="self-start max-w-[85%] text-sm">
+                <div key={item.id} className="self-start w-full text-sm text-justify">
                   <Markdown>{item.text}</Markdown>
                 </div>
               );
