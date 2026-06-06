@@ -4,6 +4,7 @@ import { useGitStore } from '../git-store';
 import type { GitCommit, GitFileChange } from '../lib/protocol';
 import GitFileList from './GitFileList';
 import GitFileTree from './GitFileTree';
+import GitStatusBadge from './GitStatusBadge';
 import DiffModal from './DiffModal';
 import GitLogModal from './GitLogModal';
 
@@ -378,43 +379,47 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
                 Revert {confirmRevert.label}?
               </h3>
             </div>
-            {confirmRevert.paths.length === 1 ? (
-              <p className="text-xs text-base-content/70 mb-1 break-all font-mono">
-                {confirmRevert.paths[0]}{confirmRevert.label === 'folder' ? '/' : ''}
-              </p>
-            ) : (
-              <ul className="text-xs text-base-content/70 mb-1 font-mono max-h-24 overflow-y-auto space-y-0.5">
-                {confirmRevert.paths.slice(0, 6).map(p => (
-                  <li key={p} className="truncate">{p}</li>
-                ))}
-                {confirmRevert.paths.length > 6 && (
-                  <li className="text-base-content/40">…and {confirmRevert.paths.length - 6} more</li>
-                )}
-              </ul>
-            )}
+            <div className="rounded-md border border-base-300 bg-base-200/40 divide-y divide-base-300/50 max-h-44 overflow-y-auto mb-3">
+              {confirmRevert.scopedFiles.slice(0, 100).map(f => {
+                const slash = f.path.lastIndexOf('/');
+                const dir = slash >= 0 ? f.path.slice(0, slash + 1) : '';
+                const base = slash >= 0 ? f.path.slice(slash + 1) : f.path;
+                return (
+                  <div key={f.path} className="flex items-center gap-2 px-2.5 py-1.5">
+                    <GitStatusBadge indexStatus={f.indexStatus} worktreeStatus={f.worktreeStatus} untracked={f.untracked} />
+                    <span className="font-mono text-xs truncate flex-1 min-w-0">
+                      {dir && <span className="text-base-content/40">{dir}</span>}
+                      <span className="text-base-content/90">{base}</span>
+                    </span>
+                    {f.untracked && <span className="badge badge-xs badge-ghost shrink-0">new</span>}
+                  </div>
+                );
+              })}
+              {confirmRevert.scopedFiles.length > 100 && (
+                <div className="px-2.5 py-1.5 text-xs text-base-content/40">
+                  …and {confirmRevert.scopedFiles.length - 100} more
+                </div>
+              )}
+            </div>
             {trackedCount > 0 && (
               <p className="text-xs text-base-content/60 mb-3">
                 {trackedCount} tracked file{trackedCount !== 1 ? 's' : ''} will be restored to the last commit. This cannot be undone.
               </p>
             )}
             {untrackedCount > 0 && (
-              <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+              <label className="flex items-start gap-2.5 mb-3 p-2.5 rounded-md border border-warning/40 bg-warning/10 cursor-pointer select-none">
                 <input
                   type="checkbox"
-                  className="checkbox checkbox-xs checkbox-warning"
+                  className="checkbox checkbox-sm checkbox-warning mt-0.5 shrink-0"
                   checked={includeUntracked}
                   onChange={e => setIncludeUntracked(e.target.checked)}
                   disabled={reverting}
                 />
-                <span className="text-xs text-base-content/70">
-                  Also remove {untrackedCount} untracked file{untrackedCount !== 1 ? 's' : ''}
+                <span className="text-xs text-base-content/80 leading-snug">
+                  Also delete {untrackedCount} untracked file{untrackedCount !== 1 ? 's' : ''}
+                  <span className="block text-base-content/50">Not committed — permanently removed, cannot be undone.</span>
                 </span>
               </label>
-            )}
-            {untrackedCount > 0 && trackedCount === 0 && (
-              <p className="text-xs text-base-content/60 mb-3">
-                {untrackedCount} untracked file{untrackedCount !== 1 ? 's' : ''} will be permanently deleted.
-              </p>
             )}
             {revertError && (
               <p className="text-xs text-error mb-3">{revertError}</p>

@@ -390,12 +390,12 @@ function NewSessionModal({ anid, onClose, onCreate }: { anid: string; onClose: (
               <div className="join">
                 <button
                   type="button"
-                  className={`join-item btn btn-sm flex-1 ${mode === 'acp' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
+                  className={`join-item btn flex-1 ${mode === 'acp' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
                   onClick={() => setMode('acp')}
                 >Chat (ACP)</button>
                 <button
                   type="button"
-                  className={`join-item btn btn-sm flex-1 ${mode === 'pty' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
+                  className={`join-item btn flex-1 ${mode === 'pty' ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
                   onClick={() => setMode('pty')}
                 >Terminal</button>
               </div>
