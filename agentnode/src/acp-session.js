@@ -224,9 +224,16 @@ class AcpSession {
     }
   }
 
+  // Friendly display name for a model id, from the catalog (falls back to the id).
+  _modelName(id) {
+    const m = this.modelState && this.modelState.availableModels.find(x => x.id === id);
+    return (m && m.name) || id;
+  }
+
   async setModel(modelId) {
     await this.ready();
     if (!this._conn || !this.acpSessionId) return;
+    const before = this.model;
     try {
       // The response carries the full configOptions set (changing the model can
       // shift the available modes/effort levels), so re-apply from it.
@@ -234,6 +241,13 @@ class AcpSession {
       if (res && res.configOptions) this._applyConfigOptions(res.configOptions);
       else { if (this.modelState) this.modelState.currentModelId = modelId; this.model = modelId; }
       this._emitModel();
+      // Mark the switch inline in the thread so it shows where it happened and
+      // survives re-attach — only when the model actually changed.
+      if (this.model && this.model !== before) {
+        const notice = { type: 'acp_notice', notice: 'model', text: `Switched to ${this._modelName(this.model)}` };
+        this._pushHistory(notice);
+        this._emit(notice);
+      }
     } catch (err) {
       this._emit({ type: 'acp_error', message: `Failed to set model: ${err && err.message ? err.message : err}` });
     }

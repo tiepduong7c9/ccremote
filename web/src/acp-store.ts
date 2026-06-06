@@ -9,6 +9,7 @@ export interface AcpThreadState {
   availableCommands?: AcpCommand[];
   model?: string | null;
   modelState?: AcpModelState | null;
+  pendingModelId?: string | null; // model the user picked, awaiting backend confirmation
   lastSeq: number; // highest event seq applied — used to dedupe fan-out
 }
 
@@ -20,6 +21,7 @@ interface AcpStore {
   resolvePermissionLocal: (sid: string, requestId: string, optionId: string | null) => void;
   setModeLocal: (sid: string, modeId: string) => void;
   setModelLocal: (sid: string, modelId: string) => void;
+  clearPendingModel: (sid: string) => void;
   clear: (sid: string) => void;
 }
 
@@ -50,7 +52,8 @@ export const useAcpStore = create<AcpStore>((set) => ({
       return { threads };
     }
     if (event.type === 'acp_model') {
-      threads.set(sid, { ...prev, model: event.model, modelState: event.modelState ?? prev.modelState ?? null });
+      // Authoritative model state from the agentnode — clears any pending switch.
+      threads.set(sid, { ...prev, model: event.model, modelState: event.modelState ?? prev.modelState ?? null, pendingModelId: null });
       return { threads };
     }
     // Conversation switched (new/resume): wipe the thread and start fresh.
@@ -86,12 +89,21 @@ export const useAcpStore = create<AcpStore>((set) => ({
     return { threads };
   }),
 
+  // Record the user's pick as pending; the confirmed currentModelId is only
+  // updated when the agentnode echoes back an acp_model event.
   setModelLocal: (sid, modelId) => set((s) => {
     const threads = new Map(s.threads);
     const prev = threads.get(sid);
     if (!prev) return {};
-    const modelState = prev.modelState ? { ...prev.modelState, currentModelId: modelId } : prev.modelState;
-    threads.set(sid, { ...prev, model: modelId, modelState });
+    threads.set(sid, { ...prev, pendingModelId: modelId });
+    return { threads };
+  }),
+
+  clearPendingModel: (sid) => set((s) => {
+    const threads = new Map(s.threads);
+    const prev = threads.get(sid);
+    if (!prev || prev.pendingModelId == null) return {};
+    threads.set(sid, { ...prev, pendingModelId: null });
     return { threads };
   }),
 

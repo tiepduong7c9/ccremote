@@ -34,6 +34,7 @@ type ThreadItem =
   | { kind: 'tool'; id: string; toolCallId: string; title: string; status: string; toolKind?: string; content: AcpToolContent[] }
   | { kind: 'plan'; id: string; entries: AcpPlanEntry[] }
   | { kind: 'permission'; id: string; requestId: string; request: AcpPermissionRequest; resolved?: string }
+  | { kind: 'notice'; id: string; text: string }
   | { kind: 'error'; id: string; message: string };
 
 // Theme-aware markdown. Colors are pinned to DaisyUI tokens (not prose's gray
@@ -104,6 +105,8 @@ function buildThread(events: AcpEvent[]): ThreadItem[] {
       }
     } else if (e.type === 'acp_permission') {
       items.push({ kind: 'permission', id: `perm${i}`, requestId: e.requestId, request: e.request, resolved: e.resolved });
+    } else if (e.type === 'acp_notice') {
+      items.push({ kind: 'notice', id: `notice${i}`, text: e.text });
     } else if (e.type === 'acp_error') {
       items.push({ kind: 'error', id: `err${i}`, message: e.message });
     }
@@ -181,7 +184,7 @@ function ModeSelector({ modeState, onSelect }: { modeState: AcpModeState | null;
   );
 }
 
-function ModelSelector({ modelState, onSelect }: { modelState: AcpModelState; onSelect: (id: string) => void }) {
+function ModelSelector({ modelState, pendingModelId, onSelect }: { modelState: AcpModelState; pendingModelId?: string | null; onSelect: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -190,8 +193,12 @@ function ModelSelector({ modelState, onSelect }: { modelState: AcpModelState; on
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
-  const current = modelState.availableModels.find(m => m.id === modelState.currentModelId);
-  const label = current?.name ?? modelLabel(modelState.currentModelId) ?? modelState.currentModelId;
+  // While a switch is in flight show the target model + spinner; once the
+  // agentnode confirms (pendingModelId cleared) fall back to the live value.
+  const switching = pendingModelId != null && pendingModelId !== modelState.currentModelId;
+  const shownId = switching ? pendingModelId : modelState.currentModelId;
+  const shown = modelState.availableModels.find(m => m.id === shownId);
+  const label = shown?.name ?? modelLabel(shownId) ?? shownId;
   return (
     <div ref={ref} className="relative">
       <button
@@ -200,14 +207,17 @@ function ModelSelector({ modelState, onSelect }: { modelState: AcpModelState; on
         onClick={() => setOpen(o => !o)}
         title="Change model"
       >
-        <Cpu size={12} className="text-base-content/50" />
-        <span>{label}</span>
-        <ChevronDown size={11} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        {switching
+          ? <span className="loading loading-spinner loading-xs" style={{ color: CORAL, width: 12, height: 12 }} />
+          : <Cpu size={12} className="text-base-content/50" />}
+        <span>{switching ? `Switching to ${label}…` : label}</span>
+        {!switching && <ChevronDown size={11} className={`transition-transform ${open ? 'rotate-180' : ''}`} />}
       </button>
       {open && (
         <div className="absolute bottom-full left-0 mb-2 w-72 bg-base-100 border border-base-300 rounded-xl shadow-lg overflow-hidden z-50 py-1">
           {modelState.availableModels.map(m => {
             const active = m.id === modelState.currentModelId;
+            const isPending = pendingModelId === m.id && switching;
             return (
               <button
                 key={m.id}
@@ -218,6 +228,7 @@ function ModelSelector({ modelState, onSelect }: { modelState: AcpModelState; on
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{m.name}</span>
                   {active && <Check size={13} style={{ color: CORAL }} className="ml-auto shrink-0" />}
+                  {isPending && <span className="loading loading-spinner loading-xs ml-auto shrink-0" style={{ color: CORAL }} />}
                 </div>
                 {m.description && <div className="text-[11px] text-base-content/50 mt-0.5 leading-snug">{m.description}</div>}
               </button>
@@ -342,6 +353,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const resolvePermissionLocal = useAcpStore(s => s.resolvePermissionLocal);
   const setModeLocal = useAcpStore(s => s.setModeLocal);
   const setModelLocal = useAcpStore(s => s.setModelLocal);
+  const clearPendingModel = useAcpStore(s => s.clearPendingModel);
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
   const [cmdIndex, setCmdIndex] = useState(0);
@@ -389,6 +401,18 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const waiting = thread?.claudeStatus === 'waiting';
   const model = modelLabel(thread?.model);
   const modelState = thread?.modelState ?? null;
+  const pendingModelId = thread?.pendingModelId ?? null;
+  const modelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (modelTimerRef.current) clearTimeout(modelTimerRef.current); }, []);
+
+  const selectModel = (id: string) => {
+    browserSocket.acpSetModel(anid, aidRef.current, id);
+    setModelLocal(sid, id);
+    // Fallback so the selector never spins forever if no confirmation arrives.
+    if (modelTimerRef.current) clearTimeout(modelTimerRef.current);
+    modelTimerRef.current = setTimeout(() => clearPendingModel(sid), 12000);
+  };
 
   // Context-window usage % from the latest usage_update.
   const contextPct = useMemo(() => {
@@ -551,6 +575,13 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                   )}
                 </div>
               );
+            case 'notice':
+              return (
+                <div key={item.id} className="self-center flex items-center gap-1.5 text-[11px] text-base-content/45 my-0.5">
+                  <Cpu size={12} className="shrink-0" />
+                  <span>{item.text}</span>
+                </div>
+              );
             case 'error':
               return (
                 <div key={item.id} className="self-start w-[85%] alert alert-error py-2 text-xs">
@@ -632,7 +663,8 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                 {modelState && modelState.availableModels.length > 0 ? (
                   <ModelSelector
                     modelState={modelState}
-                    onSelect={(id) => { browserSocket.acpSetModel(anid, aidRef.current, id); setModelLocal(sid, id); }}
+                    pendingModelId={pendingModelId}
+                    onSelect={selectModel}
                   />
                 ) : (
                   model && <span className="text-[11px] text-base-content/50 whitespace-nowrap">{model}</span>

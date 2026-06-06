@@ -106,6 +106,7 @@ export type AcpEvent = (
   | { type: 'acp_reset'; acpSessionId: string | null }
   | { type: 'acp_commands'; commands: AcpCommand[] }
   | { type: 'acp_model'; model: string | null; modelState?: AcpModelState | null }
+  | { type: 'acp_notice'; notice: string; text: string }
 ) & { seq?: number };
 
 export interface Skill {
