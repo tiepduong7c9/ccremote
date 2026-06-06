@@ -401,7 +401,17 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // Slash-command palette: active only while the draft is a bare "/word" token.
-  const commands = thread?.availableCommands ?? [];
+  // Inject the local-only commands that mirror the header button, skipping any
+  // the agent already advertises so we don't show duplicates.
+  const commands = useMemo(() => {
+    const backend = thread?.availableCommands ?? [];
+    const have = new Set(backend.map(c => c.name));
+    const local: AcpCommand[] = [
+      { name: 'clear', description: 'Start a new conversation', input: null },
+      { name: 'new', description: 'Start a new conversation', input: null },
+    ].filter(c => !have.has(c.name));
+    return [...backend, ...local];
+  }, [thread?.availableCommands]);
   const slashQuery = /^\/([^\s]*)$/.exec(draft)?.[1];
   const cmdMatches = useMemo(() => {
     if (slashQuery === undefined) return [];
@@ -468,11 +478,21 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
 
   useEffect(() => { setCmdIndex(0); }, [slashQuery]);
 
+  // /clear and /new mirror the "New conversation" button in the header.
+  const newConversation = () => {
+    browserSocket.acpNewConversation(anid, aidRef.current);
+    setDraft('');
+    setImages([]);
+    requestAnimationFrame(() => { const el = taRef.current; if (el) { el.style.height = 'auto'; el.focus(); } });
+  };
+
   const send = () => {
     const text = draft.trim();
     if (!text && images.length === 0) return;
     // /usage has no chat output over ACP — show the rich popup instead.
     if (text === '/usage' && images.length === 0) { openUsage(); setDraft(''); return; }
+    // /clear and /new start a fresh conversation, just like the header button.
+    if ((text === '/clear' || text === '/new') && images.length === 0) { newConversation(); return; }
     const blocks: AcpContentBlock[] = [];
     if (text) blocks.push({ type: 'text', text });
     for (const im of images) blocks.push({ type: 'image', data: im.data, mimeType: im.mimeType });
@@ -486,6 +506,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const acceptCommand = (cmd: AcpCommand, runIfNoArgs = true) => {
     setCmdDismissed(true);
     if (runIfNoArgs && cmd.name === 'usage') { openUsage(); setDraft(''); return; }
+    if (runIfNoArgs && (cmd.name === 'clear' || cmd.name === 'new')) { newConversation(); return; }
     if (!runIfNoArgs || cmd.input?.hint) {
       // Drop "/name " in the box so the user can type arguments before sending.
       setDraft(`/${cmd.name} `);
