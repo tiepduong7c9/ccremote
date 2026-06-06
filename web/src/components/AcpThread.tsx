@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen, Cpu } from 'lucide-react';
+import { ArrowUp, Square, Wrench, ListTodo, ShieldQuestion, BrainCircuit, AlertTriangle, ChevronRight, ChevronDown, Zap, Check, Clock, SquarePen, Cpu, ImagePlus, X } from 'lucide-react';
 import { browserSocket } from '../ws';
 import { useTerminalStore } from '../store';
 import { useAcpStore } from '../acp-store';
@@ -28,7 +28,7 @@ interface Props {
 }
 
 type ThreadItem =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; images?: string[] }
   | { kind: 'assistant'; id: string; text: string }
   | { kind: 'thought'; id: string; text: string }
   | { kind: 'tool'; id: string; toolCallId: string; title: string; status: string; toolKind?: string; content: AcpToolContent[] }
@@ -59,6 +59,19 @@ function textOf(c: AcpContentBlock | undefined): string {
   return '';
 }
 
+// Pull data-URL previews out of any ACP image blocks ({ type: 'image', data, mimeType }).
+function imagesOf(blocks: AcpContentBlock[]): string[] {
+  const out: string[] = [];
+  for (const b of blocks) {
+    const block = b as { type?: string; data?: unknown; mimeType?: unknown };
+    if (block.type === 'image' && typeof block.data === 'string') {
+      const mime = typeof block.mimeType === 'string' ? block.mimeType : 'image/png';
+      out.push(`data:${mime};base64,${block.data}`);
+    }
+  }
+  return out;
+}
+
 function buildThread(events: AcpEvent[]): ThreadItem[] {
   const items: ThreadItem[] = [];
   const toolIndex = new Map<string, number>();
@@ -66,7 +79,7 @@ function buildThread(events: AcpEvent[]): ThreadItem[] {
 
   events.forEach((e, i) => {
     if (e.type === 'acp_user') {
-      items.push({ kind: 'user', id: `u${i}`, text: e.blocks.map(textOf).join('') });
+      items.push({ kind: 'user', id: `u${i}`, text: e.blocks.map(textOf).join(''), images: imagesOf(e.blocks) });
     } else if (e.type === 'acp_update') {
       const u = e.update;
       const su = u.sessionUpdate;
@@ -360,6 +373,24 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const [cmdDismissed, setCmdDismissed] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [usageDetail, setUsageDetail] = useState<UsageDetail | null>(null);
+  // Pending image attachments: base64 data (no data: prefix) + mime, sent as
+  // ACP image content blocks alongside the text on the next send.
+  const [images, setImages] = useState<{ id: string; mimeType: string; data: string }[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const addImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const data = dataUrl.split(',')[1];
+      if (!data) return;
+      setImages(prev => [...prev, { id: nanoid(6), mimeType: file.type || 'image/png', data }]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = (id: string) => setImages(prev => prev.filter(im => im.id !== id));
 
   const openUsage = () => {
     setUsageDetail(null);
@@ -439,11 +470,15 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
 
   const send = () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text && images.length === 0) return;
     // /usage has no chat output over ACP — show the rich popup instead.
-    if (text === '/usage') { openUsage(); setDraft(''); return; }
-    browserSocket.acpPrompt(anid, aidRef.current, [{ type: 'text', text }]);
+    if (text === '/usage' && images.length === 0) { openUsage(); setDraft(''); return; }
+    const blocks: AcpContentBlock[] = [];
+    if (text) blocks.push({ type: 'text', text });
+    for (const im of images) blocks.push({ type: 'image', data: im.data, mimeType: im.mimeType });
+    browserSocket.acpPrompt(anid, aidRef.current, blocks);
     setDraft('');
+    setImages([]);
   };
 
   // runIfNoArgs=false (Tab) always completes "/name " into the box so the user can
@@ -507,8 +542,15 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
           switch (item.kind) {
             case 'user':
               return (
-                <div key={item.id} className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-base-200 border border-base-300 px-3.5 py-2 text-sm whitespace-pre-wrap break-words">
-                  {item.text}
+                <div key={item.id} className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-base-200 border border-base-300 px-3.5 py-2 text-sm break-words">
+                  {item.images && item.images.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {item.images.map((src, k) => (
+                        <img key={k} src={src} alt="attachment" className="max-h-40 rounded-lg border border-base-300" />
+                      ))}
+                    </div>
+                  )}
+                  {item.text && <span className="whitespace-pre-wrap">{item.text}</span>}
                 </div>
               );
             case 'assistant':
@@ -631,6 +673,38 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                 ))}
               </div>
             )}
+            {images.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-3 pt-3">
+                {images.map(im => (
+                  <div key={im.id} className="relative group">
+                    <img
+                      src={`data:${im.mimeType};base64,${im.data}`}
+                      alt="attachment"
+                      className="h-16 w-16 object-cover rounded-lg border border-base-300"
+                    />
+                    <button
+                      type="button"
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-base-300 hover:bg-error hover:text-white flex items-center justify-center shadow"
+                      title="Remove"
+                      onClick={() => removeImage(im.id)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={e => {
+                Array.from(e.target.files ?? []).forEach(addImageFile);
+                e.target.value = '';
+              }}
+            />
             <textarea
               ref={taRef}
               className="w-full bg-transparent resize-none outline-none text-sm px-4 pt-3 pb-1.5 leading-relaxed"
@@ -641,6 +715,13 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               onChange={e => { setDraft(e.target.value); setCmdDismissed(false); autoGrow(e.target); }}
+              onPaste={e => {
+                const files = Array.from(e.clipboardData.items)
+                  .filter(it => it.type.startsWith('image/'))
+                  .map(it => it.getAsFile())
+                  .filter((f): f is File => !!f);
+                if (files.length) { e.preventDefault(); files.forEach(addImageFile); }
+              }}
               onKeyDown={e => {
                 // Shift+Tab (mode cycle) is handled by the panel root via bubbling.
                 if (e.key === 'Tab' && e.shiftKey) return;
@@ -656,6 +737,14 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
             />
             <div className="flex items-center justify-between gap-2 px-2 pb-2">
               <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-base-content/50 hover:text-base-content hover:bg-base-200 transition-colors"
+                  title="Attach image"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <ImagePlus size={16} />
+                </button>
                 <ModeSelector
                   modeState={thread?.modeState ?? null}
                   onSelect={(id) => { browserSocket.acpSetMode(anid, aidRef.current, id); setModeLocal(sid, id); }}
@@ -687,7 +776,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
                   className="w-8 h-8 rounded-full flex items-center justify-center text-white transition-opacity disabled:opacity-30"
                   style={{ background: CORAL }}
                   title="Send"
-                  disabled={!draft.trim()}
+                  disabled={!draft.trim() && images.length === 0}
                   onClick={send}
                 >
                   <ArrowUp size={16} />
