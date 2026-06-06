@@ -293,7 +293,7 @@ function relTime(ms: number): string {
 // a "resume conversation" picker (like `claude --resume`) and a "new
 // conversation" button. Both act on the underlying Claude conversation within
 // this same ccremote session.
-function ChatHeader({ anid, sid, aid }: { anid: string; sid: string; aid: string }) {
+function ChatHeader({ anid, sid, aid, onResume }: { anid: string; sid: string; aid: string; onResume: () => void }) {
   const currentConvId = useAcpStore(s => s.threads.get(sid)?.acpSessionId ?? null);
   const [open, setOpen] = useState(false);
   const [convs, setConvs] = useState<AcpConversation[] | null>(null);
@@ -335,7 +335,7 @@ function ChatHeader({ anid, sid, aid }: { anid: string; sid: string; aid: string
                 <button
                   key={c.sessionId}
                   className={`w-full text-left px-3 py-2 transition-colors ${active ? 'bg-base-200' : 'hover:bg-base-200'}`}
-                  onClick={() => { if (!active) browserSocket.acpResumeConversation(anid, aid, c.sessionId); setOpen(false); }}
+                  onClick={() => { if (!active) { onResume(); browserSocket.acpResumeConversation(anid, aid, c.sessionId); } setOpen(false); }}
                 >
                   <div className="flex items-center gap-2">
                     <span className="truncate flex-1 text-sm">{c.title || 'Untitled conversation'}</span>
@@ -496,15 +496,52 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     prevLenRef.current = items.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Stick to the bottom for incremental updates while the user is there.
-  useEffect(() => {
+  // Stick to the bottom while the user is parked there. Pin in a layout
+  // effect (synchronously, before the browser paints) so the view is already
+  // at the bottom on the first frame — no visible scroll. Content can arrive
+  // over many frames (streaming replies, a resumed conversation's history);
+  // each one re-pins before paint, so it never jitters or animates.
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el || !stickRef.current) { prevLenRef.current = items.length; return; }
-    const jumped = items.length - prevLenRef.current > 3;
-    el.scrollTo({ top: el.scrollHeight, behavior: jumped ? 'auto' : 'smooth' });
-    scrollMemory.set(sid, el.scrollHeight);
+    el.scrollTop = el.scrollHeight;
+    scrollMemory.set(sid, el.scrollTop);
     prevLenRef.current = items.length;
   }, [items.length, working, sid]);
+
+  // Resuming a conversation from the history menu swaps the thread's contents
+  // in place (same sid, no remount) via a single setHistory. Re-arm stick so
+  // the layout effect above pins the new content to the bottom before paint,
+  // even if the user had scrolled up in the previous conversation.
+  const convId = thread?.acpSessionId ?? null;
+  const prevConvRef = useRef<string | null | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (prevConvRef.current === undefined) { prevConvRef.current = convId; return; }
+    if (prevConvRef.current === convId) return;
+    prevConvRef.current = convId;
+    stickRef.current = true;
+    scrollMemory.delete(sid);
+    const el = scrollRef.current;
+    if (el) { el.scrollTop = el.scrollHeight; prevLenRef.current = items.length; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convId, sid]);
+
+  // While a resumed conversation's content streams in and its layout settles,
+  // cover the thread with a loading overlay so the user never sees it grow /
+  // re-pin. Clear it once the thread has been quiet for a short beat.
+  const [resuming, setResuming] = useState(false);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginResume = () => {
+    stickRef.current = true;
+    scrollMemory.delete(sid);
+    setResuming(true);
+  };
+  useEffect(() => {
+    if (!resuming) return;
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => setResuming(false), 350);
+    return () => { if (settleTimer.current) clearTimeout(settleTimer.current); };
+  }, [resuming, items.length, working]);
 
   useEffect(() => {
     if (visible) taRef.current?.focus();
@@ -580,10 +617,11 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
       }}
       style={visible ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
     >
-      <ChatHeader anid={anid} sid={sid} aid={aidRef.current} />
+      <ChatHeader anid={anid} sid={sid} aid={aidRef.current} onResume={beginResume} />
 
       {/* Thread */}
-      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+      <div className="relative flex-1 overflow-hidden">
+      <div ref={scrollRef} onScroll={onScroll} className="absolute inset-0 overflow-y-auto">
         {items.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3">
             <ClaudeMark size={30} />
@@ -697,6 +735,14 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
         )}
           </div>
         )}
+      </div>
+      {resuming && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100">
+          {/* transform-based spinner: animates on the compositor so it stays
+              smooth even while the main thread mounts the resumed thread. */}
+          <span className="h-7 w-7 rounded-full border-2 border-base-content/15 border-t-base-content/50 animate-spin" />
+        </div>
+      )}
       </div>
 
       {/* Composer */}
