@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp, RotateCcw, Check, History } from 'lucide-react';
+import { GitBranch, RefreshCw, List, FolderTree, CloudDownload, ChevronsUp, RotateCcw, Check, History, FolderGit2 } from 'lucide-react';
 import { useGitStore } from '../git-store';
 import type { GitCommit, GitFileChange } from '../lib/protocol';
 import GitFileList from './GitFileList';
@@ -176,6 +176,8 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
   const trackedCount = confirmRevert ? confirmRevert.scopedFiles.filter(f => !f.untracked).length : 0;
   const untrackedCount = confirmRevert ? confirmRevert.scopedFiles.filter(f => f.untracked).length : 0;
 
+  const notGit = !!status?.error && /not a git repository/i.test(status.error);
+
   return (
     <>
       <div className="flex flex-col flex-1 min-h-0">
@@ -206,29 +208,31 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
           >
             <RefreshCw size={12} className={status?.loading ? 'animate-spin' : ''} />
           </button>
-          <button
-            className={`btn btn-xs btn-ghost p-0 w-6 h-6 ${viewMode === 'flat' ? 'btn-active' : ''}`}
-            onClick={() => setViewMode('flat')}
-            title="Flat list"
-          >
-            <List size={12} />
-          </button>
-          <button
-            className={`btn btn-xs btn-ghost p-0 w-6 h-6 ${viewMode === 'tree' ? 'btn-active' : ''}`}
-            onClick={() => setViewMode('tree')}
-            title="Tree view"
-          >
-            <FolderTree size={12} />
-          </button>
-          {viewMode === 'tree' && (
+          {!notGit && <>
             <button
-              className="btn btn-xs btn-ghost p-0 w-6 h-6"
-              onClick={() => setCollapseRevision(r => r + 1)}
-              title="Collapse all folders"
+              className={`btn btn-xs btn-ghost p-0 w-6 h-6 ${viewMode === 'flat' ? 'btn-active' : ''}`}
+              onClick={() => setViewMode('flat')}
+              title="Flat list"
             >
-              <ChevronsUp size={12} />
+              <List size={12} />
             </button>
-          )}
+            <button
+              className={`btn btn-xs btn-ghost p-0 w-6 h-6 ${viewMode === 'tree' ? 'btn-active' : ''}`}
+              onClick={() => setViewMode('tree')}
+              title="Tree view"
+            >
+              <FolderTree size={12} />
+            </button>
+            {viewMode === 'tree' && (
+              <button
+                className="btn btn-xs btn-ghost p-0 w-6 h-6"
+                onClick={() => setCollapseRevision(r => r + 1)}
+                title="Collapse all folders"
+              >
+                <ChevronsUp size={12} />
+              </button>
+            )}
+          </>}
         </div>
 
         {/* Body */}
@@ -250,7 +254,15 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
             </div>
           )}
           {status?.error && !status.loading && (
-            <div className="px-3 py-2 text-xs text-error">{status.error}</div>
+            /not a git repository/i.test(status.error) ? (
+              <div className="flex flex-col items-center justify-center gap-2 px-6 py-10 text-center text-base-content/40">
+                <FolderGit2 size={28} className="opacity-60" />
+                <p className="text-sm font-medium text-base-content/60">Not a git repository</p>
+                <p className="text-xs">This folder isn't tracked by git, so there are no changes to show.</p>
+              </div>
+            ) : (
+              <div className="px-3 py-2 text-xs text-error">{status.error}</div>
+            )
           )}
           {status && !status.loading && !status.error && status.files.length === 0 && (
             <div className="flex items-center justify-center h-full text-xs text-base-content/40">
@@ -269,6 +281,7 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
         </div>
 
         {/* Footer */}
+        {!notGit && (
         <div className="relative flex items-center gap-1 px-2 h-9 border-t border-base-300 shrink-0" ref={branchMenuRef}>
           {branchMenuOpen && (
             <div className="absolute bottom-full left-0 right-0 mb-1 mx-1 bg-base-100 border border-base-300 rounded shadow-lg z-20 max-h-48 overflow-y-auto">
@@ -303,7 +316,7 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
           <button
             className="flex items-center gap-1 min-w-0 flex-1 hover:text-base-content text-base-content/60 disabled:cursor-default disabled:hover:text-base-content/60"
             onClick={handleBranchClick}
-            disabled={!cwd || !status}
+            disabled={!cwd || !status || notGit}
             title="Switch branch"
           >
             <GitBranch size={12} className="text-base-content/40 shrink-0" />
@@ -320,7 +333,7 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
             className="btn btn-xs btn-ghost p-0 w-6 h-6"
             onClick={handleHistoryOpen}
             title="Commit history"
-            disabled={!cwd}
+            disabled={!cwd || notGit}
           >
             <History size={13} />
           </button>
@@ -328,11 +341,12 @@ export default function GitChangesTab({ anid, sid, cwd }: Props) {
             className="btn btn-xs btn-ghost p-0 w-6 h-6"
             onClick={handlePull}
             title="Pull from remote"
-            disabled={!cwd || status?.pulling || status?.loading}
+            disabled={!cwd || status?.pulling || status?.loading || notGit}
           >
             <CloudDownload size={13} className={status?.pulling ? 'animate-pulse' : ''} />
           </button>
         </div>
+        )}
       </div>
 
       {diffFile && (

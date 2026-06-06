@@ -26,6 +26,7 @@ export default function TerminalTabs({ anid, parentSid }: Props) {
 
   // If the active tab was killed, fall back to the parent
   const resolvedActive = tabs.find(t => t.id === activeTabSid) ? activeTabSid : parentSid;
+  const activeIsAcp = tabs.find(t => t.id === resolvedActive)?.mode === 'acp';
 
   // Reset baseline when switching sessions so the auto-select below doesn't
   // misfire against a different session's prior children count.
@@ -148,15 +149,17 @@ export default function TerminalTabs({ anid, parentSid }: Props) {
           <Plus size={13} />
         </button>
 
-        {/* Paste image button */}
-        <button
-          onClick={handlePasteImage}
-          onMouseDown={(e) => e.preventDefault()}
-          className="flex items-center gap-1 px-3 py-2 text-xs text-base-content/40 hover:text-base-content/70 hover:bg-base-100/50 transition-colors shrink-0"
-          title="Paste image from clipboard (Ctrl+Alt+V)"
-        >
-          <ImageIcon size={13} />
-        </button>
+        {/* Paste image button — only for terminal tabs (ACP chat has its own attach UI) */}
+        {!activeIsAcp && (
+          <button
+            onClick={handlePasteImage}
+            onMouseDown={(e) => e.preventDefault()}
+            className="flex items-center gap-1 px-3 py-2 text-xs text-base-content/40 hover:text-base-content/70 hover:bg-base-100/50 transition-colors shrink-0"
+            title="Paste image from clipboard (Ctrl+Alt+V)"
+          >
+            <ImageIcon size={13} />
+          </button>
+        )}
       </div>
 
       {/* Stacked terminal panels — all mounted, only active one visible */}
