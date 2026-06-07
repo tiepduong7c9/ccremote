@@ -48,7 +48,8 @@ function Markdown({ children }: { children: string }) {
       prose-strong:text-base-content prose-em:text-base-content prose-blockquote:text-base-content/70
       prose-a:text-primary prose-hr:border-base-300
       prose-code:text-base-content prose-code:bg-base-content/10 prose-code:border prose-code:border-base-content/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:font-normal prose-code:text-[0.85em] prose-code:before:content-[''] prose-code:after:content-['']
-      prose-pre:bg-base-300 prose-pre:text-base-content prose-pre:text-xs prose-pre:my-2">
+      prose-pre:bg-base-300 prose-pre:text-base-content prose-pre:text-xs prose-pre:my-2
+      [&_pre_code]:bg-transparent [&_pre_code]:border-0 [&_pre_code]:p-0 [&_pre_code]:rounded-none [&_pre_code]:text-inherit">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
     </div>
   );
