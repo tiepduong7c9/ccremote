@@ -67,6 +67,24 @@ class SessionManager {
     } catch (_) {}
   }
 
+  // Build the environment for a spawned child. A daemon started by systemd or
+  // at boot inherits a minimal PATH that usually lacks where `claude` is
+  // installed (~/.local/bin for the native installer, or the npm/nvm global bin
+  // beside node), so a bare `pty.spawn('claude', …)` dies with
+  // "execvp(3) failed.: No such file or directory". Prepend the likely
+  // locations so the command resolves no matter how the daemon was launched.
+  // (ACP spawns node by absolute path so it isn't affected, but it shares this
+  // env for consistency and in case the adapter shells out to claude.)
+  _childEnv(sid) {
+    const extraBins = [
+      path.dirname(process.execPath),                 // npm/nvm global bins sit beside node
+      path.join(os.homedir(), '.local', 'bin'),       // claude native installer
+      path.join(os.homedir(), '.npm-global', 'bin'),  // common custom npm prefix
+    ];
+    const parts = [...extraBins, process.env.PATH || ''].filter(Boolean);
+    return { ...process.env, PATH: parts.join(path.delimiter), CCREMOTE_SID: sid };
+  }
+
   create(opts = {}) {
     const id = nanoid(8);
     let name = opts.name;
@@ -95,7 +113,7 @@ class SessionManager {
         createdAt: new Date().toISOString(),
         lastAttachedAt: null,
       };
-      const acp = new AcpSession({ cwd, env: { ...process.env, CCREMOTE_SID: id } });
+      const acp = new AcpSession({ cwd, env: this._childEnv(id) });
       const session = { meta, pty: null, acp, scrollback: Buffer.alloc(0), listeners: acp.listeners };
       this._registerAcpHandlers(session);
       this._sessions.set(id, session);
@@ -115,7 +133,7 @@ class SessionManager {
       cols: opts.cols || 220,
       rows: opts.rows || 50,
       cwd,
-      env: { ...process.env, CCREMOTE_SID: id },
+      env: this._childEnv(id),
     });
 
     const meta = {
@@ -204,7 +222,7 @@ class SessionManager {
     // ACP sessions resume by re-spawning the adapter and loading the prior
     // conversation by its ACP sessionId (falls back to a fresh session).
     if (meta.mode === 'acp') {
-      const acp = new AcpSession({ cwd: meta.cwd, env: { ...process.env, CCREMOTE_SID: meta.id } });
+      const acp = new AcpSession({ cwd: meta.cwd, env: this._childEnv(meta.id) });
       session.acp = acp;
       session.listeners = acp.listeners;
       session.scrollback = Buffer.alloc(0);
@@ -239,7 +257,7 @@ class SessionManager {
         cols: 220,
         rows: 50,
         cwd: meta.cwd,
-        env: { ...process.env, CCREMOTE_SID: meta.id },
+        env: this._childEnv(meta.id),
       });
     } catch (err) {
       return false;
