@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -40,7 +40,10 @@ type ThreadItem =
 
 // Theme-aware markdown. Colors are pinned to DaisyUI tokens (not prose's gray
 // palette / dark:invert) so it renders correctly under any DaisyUI theme.
-function Markdown({ children }: { children: string }) {
+// Memoized: re-parsing markdown to an AST is expensive, and with a long thread
+// the parent re-renders on every keystroke in the composer. memo keeps each
+// rendered message stable so typing doesn't re-parse the entire history.
+const Markdown = memo(function Markdown({ children }: { children: string }) {
   return (
     <div className="prose prose-sm max-w-none break-words leading-relaxed
       text-base-content
@@ -53,7 +56,7 @@ function Markdown({ children }: { children: string }) {
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
     </div>
   );
-}
+});
 
 function textOf(c: AcpContentBlock | undefined): string {
   if (!c) return '';
@@ -386,6 +389,144 @@ function recordRecentCommand(name: string) {
   try { localStorage.setItem(RECENT_CMDS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
 }
 
+// The thread message list, split out and memoized so that composer keystrokes
+// (which re-render AcpThread to track the draft) don't re-render — and re-parse
+// the markdown of — every message in a long history. It re-renders only when
+// `items`, `working`, or the permission handler actually change.
+const MessageList = memo(function MessageList({
+  items,
+  working,
+  onAnswerPermission,
+}: {
+  items: ThreadItem[];
+  working: boolean;
+  onAnswerPermission: (requestId: string, optionId: string | null) => void;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3">
+        <ClaudeMark size={30} />
+        <div className="text-lg font-medium text-base-content/80">You've come to the absolutely right place!</div>
+        <div className="text-sm text-base-content/45 max-w-sm">
+          Ask Claude to edit, run, or explain anything in this repo. Tool calls and
+          permission requests appear inline.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="max-w-3xl mx-auto w-full px-4 py-6 flex flex-col gap-4">
+      {items.map(item => {
+        switch (item.kind) {
+          case 'user':
+            return (
+              <div key={item.id} className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-base-200 border border-base-300 px-3.5 py-2 text-sm break-words">
+                {item.images && item.images.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {item.images.map((src, k) => (
+                      <img key={k} src={src} alt="attachment" className="max-h-40 rounded-lg border border-base-300" />
+                    ))}
+                  </div>
+                )}
+                {item.text && <span className="whitespace-pre-wrap">{item.text}</span>}
+              </div>
+            );
+          case 'assistant':
+            return (
+              <div key={item.id} className="self-start w-full text-sm text-justify">
+                <Markdown>{item.text}</Markdown>
+              </div>
+            );
+          case 'thought':
+            return (
+              <div key={item.id} className="self-start max-w-[85%] flex items-start gap-1.5 text-xs text-base-content/50 italic whitespace-pre-wrap break-words">
+                <BrainCircuit size={13} className="shrink-0 mt-0.5" />
+                <span>{item.text}</span>
+              </div>
+            );
+          case 'tool':
+            return <div key={item.id} className="self-start w-[85%]"><ToolCard item={item} /></div>;
+          case 'plan':
+            return (
+              <div key={item.id} className="self-start w-[85%] rounded-lg border border-base-300 bg-base-100 p-3 text-sm">
+                <div className="flex items-center gap-1.5 font-medium text-base-content/70 mb-2"><ListTodo size={14} /> Plan</div>
+                <ul className="flex flex-col gap-1">
+                  {item.entries.map((en, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs">
+                      <span className={`mt-0.5 shrink-0 ${en.status === 'completed' ? 'text-success' : en.status === 'in_progress' ? 'text-warning' : 'text-base-content/30'}`}>
+                        {en.status === 'completed' ? '✓' : '○'}
+                      </span>
+                      <span className={en.status === 'completed' ? 'line-through text-base-content/40' : ''}>{en.content}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          case 'permission':
+            return (
+              <div key={item.id} className="self-start w-[85%] rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
+                <div className="flex items-center gap-1.5 font-medium text-warning mb-2">
+                  <ShieldQuestion size={15} /> Permission required
+                </div>
+                {item.request.toolCall?.title && (
+                  <div className="text-xs text-base-content/60 mb-2 font-mono break-words">{item.request.toolCall.title}</div>
+                )}
+                {item.resolved ? (
+                  <div className="text-xs text-base-content/50">
+                    {item.resolved === '__cancelled__'
+                      ? 'Cancelled'
+                      : `Answered: ${item.request.options.find(o => o.optionId === item.resolved)?.name ?? item.resolved}`}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {item.request.options.map(opt => (
+                      <button
+                        key={opt.optionId}
+                        className={`btn btn-xs ${opt.kind === 'allow_always' || opt.kind === 'allow_once' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => onAnswerPermission(item.requestId, opt.optionId)}
+                      >
+                        {opt.name}
+                      </button>
+                    ))}
+                    <button className="btn btn-xs btn-ghost text-error" onClick={() => onAnswerPermission(item.requestId, null)}>
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          case 'notice':
+            return (
+              <div key={item.id} className="self-center flex items-center gap-1.5 text-[11px] text-base-content/45 my-0.5">
+                <Cpu size={12} className="shrink-0" />
+                <span>{item.text}</span>
+              </div>
+            );
+          case 'interrupted':
+            return (
+              <div key={item.id} className="self-center flex items-center gap-1.5 text-[11px] my-0.5" style={{ color: CORAL }}>
+                <CircleSlash size={11} className="shrink-0" />
+                <span>Interrupted by user</span>
+              </div>
+            );
+          case 'error':
+            return (
+              <div key={item.id} className="self-start w-[85%] alert alert-error py-2 text-xs">
+                <AlertTriangle size={14} />
+                <span className="break-words">{item.message}</span>
+              </div>
+            );
+        }
+      })}
+      {working && (
+        <div className="self-start flex items-center gap-2 text-xs text-base-content/40">
+          <span className="loading loading-dots loading-sm" /> working…
+        </div>
+      )}
+    </div>
+  );
+});
+
 export default function AcpThread({ anid, sid, visible = true }: Props) {
   const aidRef = useRef<string>(nanoid(8));
   const setAttachment = useTerminalStore(s => s.setAttachment);
@@ -677,10 +818,11 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     }
   };
 
-  const answerPermission = (requestId: string, optionId: string | null) => {
+  // Stable identity so the memoized MessageList isn't re-rendered every keystroke.
+  const answerPermission = useCallback((requestId: string, optionId: string | null) => {
     browserSocket.acpPermissionResponse(anid, aidRef.current, requestId, optionId);
     resolvePermissionLocal(sid, requestId, optionId);
-  };
+  }, [anid, sid, resolvePermissionLocal]);
 
   // Shift+Tab cycles the permission mode (mirrors the Claude Code TUI).
   const cycleMode = () => {
@@ -707,126 +849,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
       {/* Thread */}
       <div className="relative flex-1 overflow-hidden">
       <div ref={scrollRef} onScroll={onScroll} className="absolute inset-0 overflow-y-auto">
-        {items.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3">
-            <ClaudeMark size={30} />
-            <div className="text-lg font-medium text-base-content/80">You've come to the absolutely right place!</div>
-            <div className="text-sm text-base-content/45 max-w-sm">
-              Ask Claude to edit, run, or explain anything in this repo. Tool calls and
-              permission requests appear inline.
-            </div>
-          </div>
-        ) : (
-          <div className="max-w-3xl mx-auto w-full px-4 py-6 flex flex-col gap-4">
-        {items.map(item => {
-          switch (item.kind) {
-            case 'user':
-              return (
-                <div key={item.id} className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-base-200 border border-base-300 px-3.5 py-2 text-sm break-words">
-                  {item.images && item.images.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mb-1.5">
-                      {item.images.map((src, k) => (
-                        <img key={k} src={src} alt="attachment" className="max-h-40 rounded-lg border border-base-300" />
-                      ))}
-                    </div>
-                  )}
-                  {item.text && <span className="whitespace-pre-wrap">{item.text}</span>}
-                </div>
-              );
-            case 'assistant':
-              return (
-                <div key={item.id} className="self-start w-full text-sm text-justify">
-                  <Markdown>{item.text}</Markdown>
-                </div>
-              );
-            case 'thought':
-              return (
-                <div key={item.id} className="self-start max-w-[85%] flex items-start gap-1.5 text-xs text-base-content/50 italic whitespace-pre-wrap break-words">
-                  <BrainCircuit size={13} className="shrink-0 mt-0.5" />
-                  <span>{item.text}</span>
-                </div>
-              );
-            case 'tool':
-              return <div key={item.id} className="self-start w-[85%]"><ToolCard item={item} /></div>;
-            case 'plan':
-              return (
-                <div key={item.id} className="self-start w-[85%] rounded-lg border border-base-300 bg-base-100 p-3 text-sm">
-                  <div className="flex items-center gap-1.5 font-medium text-base-content/70 mb-2"><ListTodo size={14} /> Plan</div>
-                  <ul className="flex flex-col gap-1">
-                    {item.entries.map((en, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs">
-                        <span className={`mt-0.5 shrink-0 ${en.status === 'completed' ? 'text-success' : en.status === 'in_progress' ? 'text-warning' : 'text-base-content/30'}`}>
-                          {en.status === 'completed' ? '✓' : '○'}
-                        </span>
-                        <span className={en.status === 'completed' ? 'line-through text-base-content/40' : ''}>{en.content}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            case 'permission':
-              return (
-                <div key={item.id} className="self-start w-[85%] rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
-                  <div className="flex items-center gap-1.5 font-medium text-warning mb-2">
-                    <ShieldQuestion size={15} /> Permission required
-                  </div>
-                  {item.request.toolCall?.title && (
-                    <div className="text-xs text-base-content/60 mb-2 font-mono break-words">{item.request.toolCall.title}</div>
-                  )}
-                  {item.resolved ? (
-                    <div className="text-xs text-base-content/50">
-                      {item.resolved === '__cancelled__'
-                        ? 'Cancelled'
-                        : `Answered: ${item.request.options.find(o => o.optionId === item.resolved)?.name ?? item.resolved}`}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {item.request.options.map(opt => (
-                        <button
-                          key={opt.optionId}
-                          className={`btn btn-xs ${opt.kind === 'allow_always' || opt.kind === 'allow_once' ? 'btn-primary' : 'btn-ghost'}`}
-                          onClick={() => answerPermission(item.requestId, opt.optionId)}
-                        >
-                          {opt.name}
-                        </button>
-                      ))}
-                      <button className="btn btn-xs btn-ghost text-error" onClick={() => answerPermission(item.requestId, null)}>
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            case 'notice':
-              return (
-                <div key={item.id} className="self-center flex items-center gap-1.5 text-[11px] text-base-content/45 my-0.5">
-                  <Cpu size={12} className="shrink-0" />
-                  <span>{item.text}</span>
-                </div>
-              );
-            case 'interrupted':
-              return (
-                <div key={item.id} className="self-center flex items-center gap-1.5 text-[11px] my-0.5" style={{ color: CORAL }}>
-                  <CircleSlash size={11} className="shrink-0" />
-                  <span>Interrupted by user</span>
-                </div>
-              );
-            case 'error':
-              return (
-                <div key={item.id} className="self-start w-[85%] alert alert-error py-2 text-xs">
-                  <AlertTriangle size={14} />
-                  <span className="break-words">{item.message}</span>
-                </div>
-              );
-          }
-        })}
-        {working && (
-          <div className="self-start flex items-center gap-2 text-xs text-base-content/40">
-            <span className="loading loading-dots loading-sm" /> working…
-          </div>
-        )}
-          </div>
-        )}
+        <MessageList items={items} working={working} onAnswerPermission={answerPermission} />
       </div>
       {resuming && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100">
