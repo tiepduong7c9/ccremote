@@ -46,7 +46,16 @@ confirm() {
 # ── uninstall ─────────────────────────────────────────────────────────────────
 if $UNINSTALL && [[ "$MODE" == "agentnode" ]]; then
   echo "Uninstalling ccremote agentnode..."
-  # Stop daemon
+  # Stop and disable the systemd daemon service (if installed via `ccremote service install`)
+  SERVICE="$HOME/.config/systemd/user/ccremote-daemon.service"
+  if [[ -f "$SERVICE" ]]; then
+    systemctl --user disable --now ccremote-daemon 2>/dev/null || true
+    rm -f "$SERVICE"
+    systemctl --user daemon-reload 2>/dev/null || true
+    systemctl --user reset-failed ccremote-daemon 2>/dev/null || true
+    echo "systemd service removed."
+  fi
+  # Stop daemon (covers a manually-started daemon not under systemd)
   PID_FILE="$HOME/.ccremote/daemon.pid"
   if [[ -f "$PID_FILE" ]]; then
     PID="$(cat "$PID_FILE")"
@@ -128,6 +137,11 @@ if [[ "$MODE" == "agentnode" ]]; then
   cd "$ROOT/agentnode"
   npm install
   npm link
+  # Offer to install a systemd service so the daemon starts on boot and
+  # reconnects to the server automatically (no need to run `ccremote link`).
+  if command -v systemctl &>/dev/null && confirm "Start daemon on boot via systemd (auto-reconnect)?"; then
+    ccremote service install
+  fi
   echo "Done. Run 'ccremote new' to create your first session."
   exit 0
 fi

@@ -254,6 +254,74 @@ program
     const { ensureDaemon } = require('../src/ensure-daemon');
     await ensureDaemon();
     console.log(chalk.green('✔ Daemon restarted with new config'));
+    const svc = require('../src/service');
+    if (process.platform === 'linux') {
+      const st = svc.status();
+      if (!st.installed) {
+        console.log(chalk.dim('Tip: run `ccremote service install` to start the daemon on boot and reconnect automatically.'));
+      }
+    }
+  });
+
+// ── service ─────────────────────────────────────────────────────────────────--
+const serviceCmd = program
+  .command('service')
+  .description('Manage the systemd user service that keeps the daemon running');
+
+serviceCmd
+  .command('install')
+  .description('Install + enable a systemd user service so the daemon starts on boot and reconnects automatically')
+  .action(() => {
+    try {
+      const { install } = require('../src/service');
+      const { unitPath, lingered } = install();
+      console.log(chalk.green('✔ Service installed and started'));
+      console.log(chalk.dim(`  unit: ${unitPath}`));
+      if (lingered) {
+        console.log(chalk.dim('  lingering enabled — daemon will start at boot without login'));
+      } else {
+        console.log(chalk.yellow('  ! could not enable lingering; daemon may not start until you log in.'));
+        console.log(chalk.dim(`    enable it manually: loginctl enable-linger ${require('os').userInfo().username}`));
+      }
+    } catch (err) {
+      console.error(chalk.red('✖ ' + err.message));
+      process.exit(1);
+    }
+  });
+
+serviceCmd
+  .command('uninstall')
+  .alias('remove')
+  .description('Stop, disable, and remove the systemd user service')
+  .action(() => {
+    try {
+      const { uninstall } = require('../src/service');
+      const { existed } = uninstall();
+      console.log(chalk.green(existed ? '✔ Service stopped and removed' : '✔ Nothing to remove (service was not installed)'));
+    } catch (err) {
+      console.error(chalk.red('✖ ' + err.message));
+      process.exit(1);
+    }
+  });
+
+serviceCmd
+  .command('status')
+  .description('Show whether the systemd user service is installed, enabled, and active')
+  .action(() => {
+    try {
+      const { status } = require('../src/service');
+      const st = status();
+      if (!st.installed) {
+        console.log(chalk.yellow('● Not installed') + chalk.dim('  (run `ccremote service install`)'));
+        return;
+      }
+      const dot = st.active === 'active' ? chalk.green('●') : chalk.red('●');
+      console.log(`${dot} active: ${st.active}    enabled: ${st.enabled}`);
+      console.log(chalk.dim(`  unit: ${st.unitPath}`));
+    } catch (err) {
+      console.error(chalk.red('✖ ' + err.message));
+      process.exit(1);
+    }
   });
 
 // ── attach implementation ─────────────────────────────────────────────────────
