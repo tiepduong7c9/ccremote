@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { useRegistryStore } from '../store';
+import { useRegistryStore, pinKey } from '../store';
 import { browserSocket } from '../ws';
 import { nanoid } from 'nanoid';
 import type { AgentnodeView, GitRepo, SessionMeta } from '../lib/protocol';
-import { Plus, X, Server, Copy, Check, Cable, ChevronDown, Settings, GitBranch, FolderGit2, Trash2, ChevronRight, FileText } from 'lucide-react';
+import { Plus, X, Server, Copy, Check, Cable, ChevronDown, Settings, GitBranch, FolderGit2, Trash2, ChevronRight, FileText, Pin, Focus } from 'lucide-react';
 
 // ── Add Node Modal ────────────────────────────────────────────────────────────
 
@@ -809,9 +809,12 @@ interface CardProps {
   onSelect: () => void;
   onKill: () => void;
   onRename: (name: string) => void;
+  pinned: boolean;
+  onTogglePin: () => void;
+  node?: { name: string; online: boolean }; // shown in focus view (no agentnode section)
 }
 
-function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardProps) {
+function SessionCard({ session: s, selected, onSelect, onKill, onRename, pinned, onTogglePin, node }: CardProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const isExited = s.status === 'exited';
@@ -833,6 +836,17 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
         }`}
       onClick={() => !isExited && onSelect()}
     >
+      {/* Pin to focus view — always visible when pinned, hover-revealed otherwise */}
+      <button
+        className={`absolute top-1 right-6 w-4 h-4 flex items-center justify-center rounded transition-opacity ${
+          pinned
+            ? 'text-primary opacity-100 hover:bg-primary/10'
+            : 'text-base-content/40 opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-primary/10'
+        }`}
+        onClick={e => { e.stopPropagation(); onTogglePin(); }}
+        title={pinned ? 'Unpin from focus view' : 'Pin to focus view'}
+      ><Pin size={11} fill={pinned ? 'currentColor' : 'none'} /></button>
+
       {!isExited && (
         <button
           className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center rounded text-error opacity-0 group-hover:opacity-100 hover:bg-error/10 transition-opacity"
@@ -842,7 +856,17 @@ function SessionCard({ session: s, selected, onSelect, onKill, onRename }: CardP
       )}
 
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-1.5 pr-4">
+        {node && (
+          <div className="flex items-center gap-1 text-[10px] text-base-content/50 pr-9">
+            <Server size={10} className="shrink-0" />
+            <span className="truncate uppercase tracking-wide">{node.name}</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${node.online ? 'bg-success' : 'bg-base-content/30'}`}
+              title={node.online ? 'online' : 'offline'}
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 pr-9">
           <ClaudeCodeIcon size={16} />
           {editing ? (
             <input
@@ -928,6 +952,10 @@ interface Props {
 
 export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Props) {
   const agentnodes = useRegistryStore(s => [...s.agentnodes.values()]);
+  const focusMode = useRegistryStore(s => s.focusMode);
+  const setFocusMode = useRegistryStore(s => s.setFocusMode);
+  const pinned = useRegistryStore(s => s.pinned);
+  const togglePin = useRegistryStore(s => s.togglePin);
   const [showAdd, setShowAdd] = useState(false);
   const [newSessionAnid, setNewSessionAnid] = useState<string | null>(null);
   const [killTarget, setKillTarget] = useState<{ anid: string; sid: string; cwd: string } | null>(null);
@@ -966,6 +994,20 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
         </button>
       </div>
 
+      {/* Focus toolbar — its own row so the header isn't cramped */}
+      <div className="flex items-center justify-between px-3 h-9 border-b border-base-300 bg-base-100 shrink-0">
+        <button
+          className={`btn btn-xs gap-1 ${focusMode ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setFocusMode(!focusMode)}
+          title={focusMode ? 'Show all sessions grouped by node' : 'Focus view — show only pinned sessions'}
+        >
+          <Focus size={13} /> Focus
+        </button>
+        {pinned.size > 0 && (
+          <span className="text-[10px] text-base-content/40 tabular-nums">{pinned.size} pinned</span>
+        )}
+      </div>
+
       <div className="flex-1 overflow-y-auto py-4 px-2 space-y-4">
         {agentnodes.length === 0 && (
           <p className="text-center text-base-content/40 text-xs py-10 px-4">
@@ -973,43 +1015,79 @@ export default function SessionCards({ selectedAnid, selectedSid, onSelect }: Pr
           </p>
         )}
 
-        {agentnodes.map((node: AgentnodeView) => (
-          <div key={node.id}>
-            <div className="flex items-center gap-2 px-3 mb-3">
-              <Server size={15} className="shrink-0 text-base-content/50" />
-              <span className="text-xs font-semibold text-base-content/70 truncate uppercase tracking-wider">{node.name}</span>
-              <span className={`shrink-0 badge badge-xs font-medium ${node.online ? 'badge-success' : 'badge-ghost text-base-content/40'}`}>
-                {node.online ? 'online' : 'offline'}
-              </span>
-              <div className="flex-1 h-px bg-base-content/15" />
-              <button
-                className="shrink-0 btn btn-xs btn-ghost btn-circle text-base-content/40 hover:text-base-content"
-                onClick={() => setSettingsAnid(node.id)}
-                title="Node settings"
-              ><Settings size={12} /></button>
-            </div>
-
-            <div className="flex flex-wrap gap-2 px-3">
-              {node.sessions.filter((s: SessionMeta) => !s.parentSid).map((s: SessionMeta) => (
-                <SessionCard
-                  key={s.id}
-                  session={s}
-                  selected={selectedAnid === node.id && selectedSid === s.id}
-                  onSelect={() => onSelect(node.id, s.id)}
-                  onKill={() => handleKill(node.id, s.id, s.cwd ?? '')}
-                  onRename={(name) => browserSocket.rename(node.id, s.id, name)}
-                />
-              ))}
-              {node.online && (
+        {focusMode ? (
+          (() => {
+            const pinnedCards = agentnodes.flatMap((node: AgentnodeView) =>
+              node.sessions
+                .filter((s: SessionMeta) => !s.parentSid && pinned.has(pinKey(node.id, s.id)))
+                .map((s: SessionMeta) => ({ node, s })),
+            );
+            if (pinnedCards.length === 0) {
+              return (
+                <p className="text-center text-base-content/40 text-xs py-10 px-4">
+                  No pinned sessions. Turn off Focus, hover a card, and click the <Pin size={11} className="inline -mt-0.5" /> icon to add it here.
+                </p>
+              );
+            }
+            return (
+              <div className="flex flex-wrap gap-2 px-3">
+                {pinnedCards.map(({ node, s }) => (
+                  <SessionCard
+                    key={pinKey(node.id, s.id)}
+                    session={s}
+                    node={{ name: node.name, online: node.online }}
+                    pinned
+                    onTogglePin={() => togglePin(node.id, s.id)}
+                    selected={selectedAnid === node.id && selectedSid === s.id}
+                    onSelect={() => onSelect(node.id, s.id)}
+                    onKill={() => handleKill(node.id, s.id, s.cwd ?? '')}
+                    onRename={(name) => browserSocket.rename(node.id, s.id, name)}
+                  />
+                ))}
+              </div>
+            );
+          })()
+        ) : (
+          agentnodes.map((node: AgentnodeView) => (
+            <div key={node.id}>
+              <div className="flex items-center gap-2 px-3 mb-3">
+                <Server size={15} className="shrink-0 text-base-content/50" />
+                <span className="text-xs font-semibold text-base-content/70 truncate uppercase tracking-wider">{node.name}</span>
+                <span className={`shrink-0 badge badge-xs font-medium ${node.online ? 'badge-success' : 'badge-ghost text-base-content/40'}`}>
+                  {node.online ? 'online' : 'offline'}
+                </span>
+                <div className="flex-1 h-px bg-base-content/15" />
                 <button
-                  className="w-56 rounded-lg border-2 border-dashed border-base-content/25 h-8 text-base-content/40 hover:border-primary/50 hover:text-primary/60 transition-colors flex items-center justify-center"
-                  onClick={() => handleNew(node.id)}
-                  title="New session"
-                ><Plus size={20} /></button>
-              )}
+                  className="shrink-0 btn btn-xs btn-ghost btn-circle text-base-content/40 hover:text-base-content"
+                  onClick={() => setSettingsAnid(node.id)}
+                  title="Node settings"
+                ><Settings size={12} /></button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 px-3">
+                {node.sessions.filter((s: SessionMeta) => !s.parentSid).map((s: SessionMeta) => (
+                  <SessionCard
+                    key={s.id}
+                    session={s}
+                    pinned={pinned.has(pinKey(node.id, s.id))}
+                    onTogglePin={() => togglePin(node.id, s.id)}
+                    selected={selectedAnid === node.id && selectedSid === s.id}
+                    onSelect={() => onSelect(node.id, s.id)}
+                    onKill={() => handleKill(node.id, s.id, s.cwd ?? '')}
+                    onRename={(name) => browserSocket.rename(node.id, s.id, name)}
+                  />
+                ))}
+                {node.online && (
+                  <button
+                    className="w-56 rounded-lg border-2 border-dashed border-base-content/25 h-8 text-base-content/40 hover:border-primary/50 hover:text-primary/60 transition-colors flex items-center justify-center"
+                    onClick={() => handleNew(node.id)}
+                    title="New session"
+                  ><Plus size={20} /></button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {showAdd && <AddAgentnodeModal onClose={() => setShowAdd(false)} />}
