@@ -191,7 +191,10 @@ class SessionManager {
   // and meta.status stay in sync and get persisted/broadcast.
   _registerAcpHandlers(session) {
     const { meta, acp } = session;
-    acp.listeners.add((event) => {
+    // ACP sessions share one listener Set for both browser attachments and this
+    // internal status mirror (session.listeners === acp.listeners). Keep a
+    // reference so detach() can tell "real" viewers apart from this mirror.
+    const statusListener = (event) => {
       if (event.type === 'acp_status') {
         const next = event.claudeStatus; // working | waiting | idle (undefined never emitted)
         if (meta.claudeStatus !== next) {
@@ -210,7 +213,9 @@ class SessionManager {
         delete meta.claudeStatus;
         this._persist();
       }
-    });
+    };
+    acp.listeners.add(statusListener);
+    session._acpStatusListener = statusListener;
   }
 
   resumeSession(id) {
@@ -318,7 +323,12 @@ class SessionManager {
     const session = this._sessions.get(id);
     if (!session) return;
     session.listeners.delete(listener);
-    if (session.listeners.size === 0 && session.meta.claudeStatus === 'idle') {
+    // ACP sessions keep an internal status-mirror listener in the same Set, so
+    // exclude it when checking for "no viewers left". Once the last real viewer
+    // leaves an idle/"done" session, clear the status so it shows plain idle —
+    // a signal that it has been checked.
+    const internal = session._acpStatusListener && session.listeners.has(session._acpStatusListener) ? 1 : 0;
+    if (session.listeners.size - internal === 0 && session.meta.claudeStatus === 'idle') {
       delete session.meta.claudeStatus;
       this._persist();
     }
