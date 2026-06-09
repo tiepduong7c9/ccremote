@@ -12,7 +12,7 @@ const MAX_SCROLLBACK = 500 * 1024; // 500 KB per session
 
 // Absolute path to the hook script — written into .claude/settings.local.json
 const HOOK_COMMAND = `node ${path.join(__dirname, 'hook.js')}`;
-const HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'Stop'];
+const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
 
 const ADJECTIVES = [
   'amber', 'arctic', 'bold', 'brave', 'bright', 'calm', 'cold', 'cool',

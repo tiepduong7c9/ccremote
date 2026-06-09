@@ -22,6 +22,12 @@ process.stdin.on('end', () => {
     case 'Stop':
       claudeStatus = 'idle';
       break;
+    case 'UserPromptSubmit':
+      // A turn is starting (user prompt, or a scheduled/loop wake-up resuming
+      // the session). Mark working immediately so the status doesn't stay
+      // "done" while Claude thinks before its first tool call.
+      claudeStatus = 'working';
+      break;
     case 'PreToolUse':
       claudeStatus = ['AskUserQuestion', 'ExitPlanMode'].includes(event.tool_name) ? 'waiting' : 'working';
       break;
