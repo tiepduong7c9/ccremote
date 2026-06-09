@@ -389,6 +389,11 @@ function recordRecentCommand(name: string) {
   try { localStorage.setItem(RECENT_CMDS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
 }
 
+// Unsent composer drafts, keyed by session id. AcpThread unmounts when you
+// switch to another session, so its local draft state would be lost; this
+// module-level map preserves the in-progress prompt across that remount.
+const draftBySid = new Map<string, string>();
+
 // The thread message list, split out and memoized so that composer keystrokes
 // (which re-render AcpThread to track the draft) don't re-render — and re-parse
 // the markdown of — every message in a long history. It re-renders only when
@@ -543,7 +548,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   const setModeLocal = useAcpStore(s => s.setModeLocal);
   const setModelLocal = useAcpStore(s => s.setModelLocal);
   const clearPendingModel = useAcpStore(s => s.clearPendingModel);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(() => draftBySid.get(sid) ?? '');
   const [focused, setFocused] = useState(false);
   const [cmdIndex, setCmdIndex] = useState(0);
   const [cmdDismissed, setCmdDismissed] = useState(false);
@@ -558,6 +563,14 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   // ACP image content blocks alongside the text on the next send.
   const [images, setImages] = useState<{ id: string; mimeType: string; data: string }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Preserve the unsent draft across session switches (this component unmounts
+  // when another session is selected). Cleared by send()/newConversation()
+  // setting draft to ''.
+  useEffect(() => {
+    if (draft) draftBySid.set(sid, draft);
+    else draftBySid.delete(sid);
+  }, [sid, draft]);
 
   const addImageFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
