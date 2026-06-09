@@ -479,18 +479,25 @@ const MessageList = memo(function MessageList({
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {item.request.options.map(opt => (
-                      <button
-                        key={opt.optionId}
-                        className={`btn btn-xs ${opt.kind === 'allow_always' || opt.kind === 'allow_once' ? 'btn-primary' : 'btn-ghost'}`}
-                        onClick={() => onAnswerPermission(item.requestId, opt.optionId)}
-                      >
-                        {opt.name}
+                    {item.request.options.map(opt => {
+                      const isReject = opt.kind === 'reject_once' || opt.kind === 'reject_always';
+                      const isAllow = opt.kind === 'allow_always' || opt.kind === 'allow_once';
+                      return (
+                        <button
+                          key={opt.optionId}
+                          className={`btn btn-xs ${isAllow ? 'btn-primary' : isReject ? 'btn-ghost text-error' : 'btn-ghost'}`}
+                          onClick={() => onAnswerPermission(item.requestId, opt.optionId)}
+                        >
+                          {opt.name}
+                        </button>
+                      );
+                    })}
+                    {/* Fallback reject only when the agent didn't offer one; sends null to cancel. */}
+                    {!item.request.options.some(o => o.kind === 'reject_once' || o.kind === 'reject_always') && (
+                      <button className="btn btn-xs btn-ghost text-error" onClick={() => onAnswerPermission(item.requestId, null)}>
+                        Reject
                       </button>
-                    ))}
-                    <button className="btn btn-xs btn-ghost text-error" onClick={() => onAnswerPermission(item.requestId, null)}>
-                      Reject
-                    </button>
+                    )}
                   </div>
                 )}
               </div>
