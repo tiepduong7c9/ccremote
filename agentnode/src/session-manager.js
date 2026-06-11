@@ -475,6 +475,17 @@ class SessionManager {
     this._persist();
   }
 
+  // A viewer opened/looked at the session: if it was "done" (idle), clear the
+  // status so the card reverts to plain idle — the done → viewed → idle signal.
+  markViewed(id) {
+    const session = this._sessions.get(id);
+    if (!session) return;
+    if (session.meta.claudeStatus === 'idle') {
+      delete session.meta.claudeStatus;
+      this._persist();
+    }
+  }
+
   _persist() {
     try {
       fs.writeFileSync(

@@ -103,6 +103,10 @@ class BrowserHub {
         this._hub.send(anid, { type: 'rename', sid: msg.sid, name: msg.name });
         break;
 
+      case 'mark_viewed':
+        this._hub.send(anid, { type: 'mark_viewed', sid: msg.sid });
+        break;
+
       case 'upload_image':
         this._hub.send(anid, { type: 'upload_image', aid, sid: msg.sid, data: msg.data, ext: msg.ext });
         break;

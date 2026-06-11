@@ -33,6 +33,16 @@ export default function App() {
     ? session.cwd.split('/').filter(Boolean).pop() || '/'
     : null;
 
+  // done → viewed → idle: while the selected session is "done" (claudeStatus
+  // 'idle'), tell the agentnode it's been viewed so the card reverts to plain
+  // idle. Fires both when you open a done session and when it finishes while
+  // you're already viewing it; the agentnode clears it, so this won't re-fire.
+  useEffect(() => {
+    if (selectedAnid && selectedSid && session?.claudeStatus === 'idle') {
+      browserSocket.markViewed(selectedAnid, selectedSid);
+    }
+  }, [selectedAnid, selectedSid, session?.claudeStatus]);
+
   // Ref so the keydown handler always sees current session without re-registering
   const fileSearchContextRef = useRef<{ anid: string; cwd: string } | null>(null);
   useEffect(() => {

@@ -364,6 +364,11 @@ class ServerLink {
         break;
       }
 
+      case 'mark_viewed':
+        // Browser viewed a "done" session — clear the status (broadcast via _persist).
+        this._manager.markViewed(msg.sid);
+        break;
+
       case 'upload_image': {
         const { aid, sid, data, ext } = msg;
         const meta = this._manager.resolve(sid);

@@ -553,6 +553,11 @@ class BrowserSocket {
     this.send({ type: 'rename', anid, sid, name });
   }
 
+  // Tell the agentnode a "done" session has been viewed so it reverts to idle.
+  markViewed(anid: string, sid: string) {
+    this.send({ type: 'mark_viewed', anid, sid });
+  }
+
   uploadImage(anid: string, aid: string, sid: string, data: string, ext: string) {
     this.send({ type: 'upload_image', anid, aid, sid, data, ext });
   }
