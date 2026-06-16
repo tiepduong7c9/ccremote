@@ -51,6 +51,8 @@ class AcpSession {
     this.model = null;               // current model id (from configOptions, transcript fallback)
     this.modelState = null;          // { currentModelId, availableModels:[{id,name,description}] }
     this.alive = false;
+    this.isReady = false;            // true once initialize + new/loadSession has resolved (note: ready() is a method)
+    this._resumeRequested = false;   // true when started via resume (history will replay)
 
     this._conn = null;
     this._child = null;
@@ -64,6 +66,10 @@ class AcpSession {
   // Idempotent-ish: callers should await ready() rather than calling twice.
   start({ resumeSessionId } = {}) {
     if (this._ready) return this._ready;
+    // A resume replays the prior conversation as streamed updates after attach,
+    // so the initial snapshot is empty; flag it so browsers can hold a loading
+    // overlay instead of watching the thread scroll in.
+    this._resumeRequested = !!resumeSessionId;
     this._ready = this._start({ resumeSessionId });
     return this._ready;
   }
@@ -132,6 +138,7 @@ class AcpSession {
     this._emitMode();
     this._emitModel();
     this._refreshModel();
+    this.isReady = true;
     return this.acpSessionId;
   }
 
@@ -456,6 +463,9 @@ class AcpSession {
       availableCommands: this.availableCommands,
       model: this.model,
       modelState: this.modelState,
+      // True while a resume is still replaying history; the snapshot is empty
+      // now and the conversation will stream in via subsequent acp_event frames.
+      loading: this._resumeRequested && !this.isReady,
     };
   }
 

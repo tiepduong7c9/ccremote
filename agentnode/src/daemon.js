@@ -110,7 +110,7 @@ function startDaemon() {
 
           if (result.meta.mode === 'acp') {
             const snap = result.acp || { events: [], claudeStatus: undefined, acpSessionId: null };
-            send({ type: 'acp_history', events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState, availableCommands: snap.availableCommands, model: snap.model, modelState: snap.modelState });
+            send({ type: 'acp_history', events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState, availableCommands: snap.availableCommands, model: snap.model, modelState: snap.modelState, loading: snap.loading });
             send({ type: 'attached', session: result.meta });
             break;
           }
