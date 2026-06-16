@@ -436,7 +436,7 @@ const MessageList = memo(function MessageList({
 }) {
   if (items.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3">
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6 gap-3">
         <ClaudeMark size={30} />
         <div className="text-lg font-medium text-base-content/80">You've come to the absolutely right place!</div>
         <div className="text-sm text-base-content/45 max-w-sm">
@@ -974,7 +974,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
       {/* Thread */}
       <div className="relative flex-1 overflow-hidden">
       <div ref={scrollRef} onScroll={onScroll} className="absolute inset-0 overflow-y-auto">
-        <div ref={contentRef} className="min-h-full">
+        <div ref={contentRef} className="min-h-full flex flex-col">
           <MessageList items={items} working={working} onAnswerPermission={answerPermission} />
         </div>
       </div>
