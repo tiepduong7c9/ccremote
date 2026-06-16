@@ -858,29 +858,32 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resuming, sid]);
 
-  // First load after the agentnode connects: the acp_history snapshot populates
-  // the thread in one shot, which would otherwise visibly scroll as the freshly
-  // loaded messages settle. Cover that with the same overlay. We key off the
-  // snapshot specifically (historyLoaded, set only by setHistory) rather than
-  // "thread defined" — a status/model event can create an empty thread via
-  // appendEvent *before* the history arrives, which would spend the one-shot
-  // guard on empty content and miss the real load. Switching to an
-  // already-loaded session (historyLoaded at mount) keeps its restored scroll
-  // position and needs no overlay; a brand-new conversation's snapshot is empty
-  // (no history to settle), so it gets none either.
-  const historyLoadedAtMountRef = useRef(thread?.historyLoaded === true);
-  const didInitialLoadRef = useRef(false);
+  // Cover the thread with the loading overlay whenever a history snapshot
+  // (re)loads — keyed off historyEpoch, which the store bumps on every
+  // setHistory: the first attach AND every re-attach (e.g. after an agentnode
+  // restart, including when you switch away and back to a session). A plain
+  // tab switch with no re-attach doesn't bump the epoch, so an already-loaded
+  // session keeps its restored scroll and gets no overlay.
+  //
+  // - First load into this panel (epoch goes undefined -> N): cover if there's
+  //   content to settle or a resume is still streaming in.
+  // - A later re-attach (epoch bumps again): only cover when the snapshot is a
+  //   resume that will re-stream (historyLoading) — a full one-shot snapshot
+  //   replaces content without the incremental scroll and should keep position.
+  const prevEpochRef = useRef(thread?.historyEpoch);
   useLayoutEffect(() => {
-    if (didInitialLoadRef.current) return;
-    if (historyLoadedAtMountRef.current) { didInitialLoadRef.current = true; return; }
-    if (!thread?.historyLoaded) return; // still waiting for the initial history snapshot
-    didInitialLoadRef.current = true;
-    // Cover the load when there's content to settle, or when a resume is still
-    // replaying — the snapshot is empty now but history streams in next, so the
-    // overlay (held by the settle effect) must be up before it arrives.
-    if (items.length > 0 || thread.historyLoading) beginResume();
+    const epoch = thread?.historyEpoch;
+    if (epoch === undefined) return;            // no snapshot received yet
+    const firstForPanel = prevEpochRef.current === undefined;
+    if (prevEpochRef.current === epoch) return; // not a new snapshot (e.g. tab switch)
+    prevEpochRef.current = epoch;
+    if (firstForPanel) {
+      if (items.length > 0 || thread?.historyLoading) beginResume();
+    } else if (thread?.historyLoading) {
+      beginResume();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread?.historyLoaded, items.length]);
+  }, [thread?.historyEpoch, items.length]);
 
   useEffect(() => {
     if (visible) taRef.current?.focus();

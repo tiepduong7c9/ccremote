@@ -13,6 +13,7 @@ export interface AcpThreadState {
   lastSeq: number; // highest event seq applied — used to dedupe fan-out
   historyLoaded?: boolean; // true once the acp_history snapshot has been applied
   historyLoading?: boolean; // snapshot was empty because a resume is still replaying history
+  historyEpoch?: number; // bumped on every setHistory (initial attach + re-attaches)
 }
 
 interface AcpStore {
@@ -32,8 +33,12 @@ export const useAcpStore = create<AcpStore>((set) => ({
 
   setHistory: (sid, events, claudeStatus, acpSessionId, modeState, availableCommands, model, modelState, loading) => set((s) => {
     const threads = new Map(s.threads);
+    const prev = threads.get(sid);
     const lastSeq = events.reduce((m, e) => (typeof e.seq === 'number' && e.seq > m ? e.seq : m), -1);
-    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, availableCommands: availableCommands ?? [], model: model ?? null, modelState: modelState ?? null, lastSeq, historyLoaded: true, historyLoading: !!loading });
+    // historyEpoch increments on every snapshot (initial attach AND every
+    // re-attach, e.g. after an agentnode restart) so the UI can re-cover the
+    // thread with a loading overlay each time history (re)loads, not just once.
+    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, availableCommands: availableCommands ?? [], model: model ?? null, modelState: modelState ?? null, lastSeq, historyLoaded: true, historyLoading: !!loading, historyEpoch: (prev?.historyEpoch ?? 0) + 1 });
     return { threads };
   }),
 
