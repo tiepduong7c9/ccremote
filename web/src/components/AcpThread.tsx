@@ -592,6 +592,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     browserSocket.acpUsageDetail(anid, aidRef.current, setUsageDetail);
   };
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // Slash-command palette: active only while the draft is a bare "/word" token.
@@ -734,9 +735,15 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId, sid]);
 
-  // While a resumed conversation's content streams in and its layout settles,
-  // cover the thread with a loading overlay so the user never sees it grow /
-  // re-pin. Clear it once the thread has been quiet for a short beat.
+  // While a resumed/loaded conversation's content settles, cover the thread with
+  // a loading overlay so the user never sees it grow or re-pin. The tricky part
+  // is that the layout keeps changing *after* the items are in the DOM: markdown
+  // highlights, code blocks lay out, and <img> attachments finish loading — each
+  // grows scrollHeight asynchronously, well after any fixed timer would expire.
+  // So instead of a fixed delay we watch the content's actual size with a
+  // ResizeObserver: re-pin to the bottom on every change and only lift the
+  // overlay once the size has held steady for a short beat (with a hard cap so
+  // it can never get stuck).
   const [resuming, setResuming] = useState(false);
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const beginResume = () => {
@@ -746,10 +753,62 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   };
   useEffect(() => {
     if (!resuming) return;
-    if (settleTimer.current) clearTimeout(settleTimer.current);
-    settleTimer.current = setTimeout(() => setResuming(false), 350);
-    return () => { if (settleTimer.current) clearTimeout(settleTimer.current); };
-  }, [resuming, items.length, working]);
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content) { setResuming(false); return; }
+    // After an agentnode restart, attaching resumes the conversation and the
+    // history replays as a stream of acp_event frames *after* an empty initial
+    // snapshot (historyLoading). In that case there may be a multi-second gap
+    // before the first message lands, so we must not start the settle countdown
+    // on the still-empty thread — it would lift the overlay right before the
+    // history streams in and scrolls.
+    const loading = thread?.historyLoading ?? false;
+    const arm = () => {
+      if (stickRef.current) {
+        el.scrollTop = el.scrollHeight;
+        scrollMemory.set(sid, el.scrollTop);
+      }
+      const hasContent = !!content.querySelector('[class*="self-"]');
+      if (loading && !hasContent) return; // resume in flight, no messages yet — hold
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      settleTimer.current = setTimeout(() => setResuming(false), 200);
+    };
+    const ro = new ResizeObserver(arm);
+    ro.observe(content); // fires once immediately with the current size
+    // Hard cap so the overlay can never get stuck — longer while a resume may
+    // still be replaying so a slow round-trip doesn't expose the scroll.
+    const cap = setTimeout(() => setResuming(false), loading ? 12000 : 2500);
+    return () => {
+      ro.disconnect();
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      clearTimeout(cap);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resuming, sid]);
+
+  // First load after the agentnode connects: the acp_history snapshot populates
+  // the thread in one shot, which would otherwise visibly scroll as the freshly
+  // loaded messages settle. Cover that with the same overlay. We key off the
+  // snapshot specifically (historyLoaded, set only by setHistory) rather than
+  // "thread defined" — a status/model event can create an empty thread via
+  // appendEvent *before* the history arrives, which would spend the one-shot
+  // guard on empty content and miss the real load. Switching to an
+  // already-loaded session (historyLoaded at mount) keeps its restored scroll
+  // position and needs no overlay; a brand-new conversation's snapshot is empty
+  // (no history to settle), so it gets none either.
+  const historyLoadedAtMountRef = useRef(thread?.historyLoaded === true);
+  const didInitialLoadRef = useRef(false);
+  useLayoutEffect(() => {
+    if (didInitialLoadRef.current) return;
+    if (historyLoadedAtMountRef.current) { didInitialLoadRef.current = true; return; }
+    if (!thread?.historyLoaded) return; // still waiting for the initial history snapshot
+    didInitialLoadRef.current = true;
+    // Cover the load when there's content to settle, or when a resume is still
+    // replaying — the snapshot is empty now but history streams in next, so the
+    // overlay (held by the settle effect) must be up before it arrives.
+    if (items.length > 0 || thread.historyLoading) beginResume();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread?.historyLoaded, items.length]);
 
   useEffect(() => {
     if (visible) taRef.current?.focus();
@@ -869,7 +928,9 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
       {/* Thread */}
       <div className="relative flex-1 overflow-hidden">
       <div ref={scrollRef} onScroll={onScroll} className="absolute inset-0 overflow-y-auto">
-        <MessageList items={items} working={working} onAnswerPermission={answerPermission} />
+        <div ref={contentRef} className="min-h-full">
+          <MessageList items={items} working={working} onAnswerPermission={answerPermission} />
+        </div>
       </div>
       {resuming && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100">

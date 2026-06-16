@@ -199,6 +199,7 @@ class ServerLink {
             availableCommands: snap.availableCommands,
             model: snap.model,
             modelState: snap.modelState,
+            loading: snap.loading,
           });
           this._send({ type: 'attached', aid, sid: meta.id, session: result.meta });
           break;
@@ -273,7 +274,7 @@ class ServerLink {
         if (result) {
           if (result.meta.mode === 'acp') {
             const snap = result.acp || { events: [], claudeStatus: undefined, acpSessionId: null };
-            this._send({ type: 'acp_history', aid, sid: meta.id, events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState, availableCommands: snap.availableCommands, model: snap.model });
+            this._send({ type: 'acp_history', aid, sid: meta.id, events: snap.events, claudeStatus: snap.claudeStatus, acpSessionId: snap.acpSessionId, modeState: snap.modeState, availableCommands: snap.availableCommands, model: snap.model, loading: snap.loading });
           }
           this._send({ type: 'attached', aid, sid: meta.id, session: meta });
         }

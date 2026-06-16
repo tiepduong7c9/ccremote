@@ -137,7 +137,7 @@ export type ServerMsg =
   | { type: 'attached'; anid: string; aid: string; sid: string; session: SessionMeta }
   | { type: 'scrollback'; anid: string; aid: string; sid: string; data: string; redraw?: boolean }
   | { type: 'data'; anid: string; aid: string; sid: string; data: string }
-  | { type: 'acp_history'; anid: string; aid: string; sid: string; events: AcpEvent[]; claudeStatus?: 'working' | 'waiting' | 'idle'; acpSessionId: string | null; modeState?: AcpModeState | null; availableCommands?: AcpCommand[]; model?: string | null; modelState?: AcpModelState | null }
+  | { type: 'acp_history'; anid: string; aid: string; sid: string; events: AcpEvent[]; claudeStatus?: 'working' | 'waiting' | 'idle'; acpSessionId: string | null; modeState?: AcpModeState | null; availableCommands?: AcpCommand[]; model?: string | null; modelState?: AcpModelState | null; loading?: boolean }
   | { type: 'acp_event'; anid: string; aid: string; sid: string; event: AcpEvent }
   | { type: 'acp_conversations_result'; anid: string; aid: string; conversations: AcpConversation[] }
   | { type: 'acp_usage_detail_result'; anid: string; aid: string; account: AcpAccount | null; usage: AcpUsageData | null }

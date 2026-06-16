@@ -11,12 +11,14 @@ export interface AcpThreadState {
   modelState?: AcpModelState | null;
   pendingModelId?: string | null; // model the user picked, awaiting backend confirmation
   lastSeq: number; // highest event seq applied — used to dedupe fan-out
+  historyLoaded?: boolean; // true once the acp_history snapshot has been applied
+  historyLoading?: boolean; // snapshot was empty because a resume is still replaying history
 }
 
 interface AcpStore {
   // keyed by session id (sid)
   threads: Map<string, AcpThreadState>;
-  setHistory: (sid: string, events: AcpEvent[], claudeStatus: AcpThreadState['claudeStatus'], acpSessionId: string | null, modeState?: AcpModeState | null, availableCommands?: AcpCommand[], model?: string | null, modelState?: AcpModelState | null) => void;
+  setHistory: (sid: string, events: AcpEvent[], claudeStatus: AcpThreadState['claudeStatus'], acpSessionId: string | null, modeState?: AcpModeState | null, availableCommands?: AcpCommand[], model?: string | null, modelState?: AcpModelState | null, loading?: boolean) => void;
   appendEvent: (sid: string, event: AcpEvent) => void;
   resolvePermissionLocal: (sid: string, requestId: string, optionId: string | null) => void;
   setModeLocal: (sid: string, modeId: string) => void;
@@ -28,10 +30,10 @@ interface AcpStore {
 export const useAcpStore = create<AcpStore>((set) => ({
   threads: new Map(),
 
-  setHistory: (sid, events, claudeStatus, acpSessionId, modeState, availableCommands, model, modelState) => set((s) => {
+  setHistory: (sid, events, claudeStatus, acpSessionId, modeState, availableCommands, model, modelState, loading) => set((s) => {
     const threads = new Map(s.threads);
     const lastSeq = events.reduce((m, e) => (typeof e.seq === 'number' && e.seq > m ? e.seq : m), -1);
-    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, availableCommands: availableCommands ?? [], model: model ?? null, modelState: modelState ?? null, lastSeq });
+    threads.set(sid, { events: [...events], claudeStatus, acpSessionId, modeState: modeState ?? null, availableCommands: availableCommands ?? [], model: model ?? null, modelState: modelState ?? null, lastSeq, historyLoaded: true, historyLoading: !!loading });
     return { threads };
   }),
 
