@@ -296,14 +296,22 @@ function relTime(ms: number): string {
   return new Date(ms).toLocaleDateString();
 }
 
-// Floating top-right controls on the chat panel (like the Claude Code GUI):
-// a "resume conversation" picker (like `claude --resume`) and a "new
-// conversation" button. Both act on the underlying Claude conversation within
-// this same ccremote session.
-function ChatHeader({ anid, sid, aid, onResume }: { anid: string; sid: string; aid: string; onResume: () => void }) {
+// Heading bar across the top of the chat panel. Shows the session name and a
+// short recap (the conversation's opening prompt) on the left, and the chat
+// controls on the right (like the Claude Code GUI): a "resume conversation"
+// picker (like `claude --resume`) and a "new conversation" button. Both act on
+// the underlying Claude conversation within this same ccremote session.
+function ChatHeader({ anid, sid, aid, recap, onResume }: { anid: string; sid: string; aid: string; recap: string | null; onResume: () => void }) {
   const currentConvId = useAcpStore(s => s.threads.get(sid)?.acpSessionId ?? null);
+  // Claude generates the AI title asynchronously after a turn finishes, so
+  // refetch on every status change (turn boundary) to pick it up once written.
+  const claudeStatus = useAcpStore(s => s.threads.get(sid)?.claudeStatus);
   const [open, setOpen] = useState(false);
   const [convs, setConvs] = useState<AcpConversation[] | null>(null);
+  // Claude's own AI-generated title for the active conversation (the same one
+  // its TUI / VS Code pickers show). Falls back to the local recap until it's
+  // available.
+  const [title, setTitle] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -313,6 +321,20 @@ function ChatHeader({ anid, sid, aid, onResume }: { anid: string; sid: string; a
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
 
+  // Clear the stale title immediately when the conversation switches (new/resume).
+  useEffect(() => { setTitle(null); }, [currentConvId]);
+
+  useEffect(() => {
+    if (!currentConvId) return;
+    let cancelled = false;
+    browserSocket.acpListConversations(anid, aid, (list) => {
+      if (cancelled) return;
+      const t = list.find(c => c.sessionId === currentConvId)?.title ?? null;
+      if (t) setTitle(t);
+    });
+    return () => { cancelled = true; };
+  }, [anid, aid, currentConvId, claudeStatus]);
+
   const toggle = () => {
     const next = !open;
     setOpen(next);
@@ -320,19 +342,23 @@ function ChatHeader({ anid, sid, aid, onResume }: { anid: string; sid: string; a
   };
 
   return (
-    <div ref={ref} className="absolute top-2 right-3 z-20 flex items-center gap-0.5">
-      <button className="btn btn-ghost btn-sm btn-square" title="Resume a conversation" onClick={toggle}>
-        <Clock size={16} />
-      </button>
-      <button
-        className="btn btn-ghost btn-sm btn-square"
-        title="New conversation"
-        onClick={() => browserSocket.acpNewConversation(anid, aid)}
-      >
-        <SquarePen size={16} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-80 max-h-96 overflow-y-auto bg-base-100 border border-base-300 rounded-xl shadow-lg z-50 py-1">
+    <div className="shrink-0 z-20 flex items-center gap-3 px-4 py-2 border-b border-base-300 bg-base-100">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-base-content truncate leading-tight">{title || recap || 'New conversation'}</div>
+      </div>
+      <div ref={ref} className="relative flex items-center gap-0.5 shrink-0">
+        <button className="btn btn-ghost btn-sm btn-square" title="Resume a conversation" onClick={toggle}>
+          <Clock size={16} />
+        </button>
+        <button
+          className="btn btn-ghost btn-sm btn-square"
+          title="New conversation"
+          onClick={() => browserSocket.acpNewConversation(anid, aid)}
+        >
+          <SquarePen size={16} />
+        </button>
+        {open && (
+          <div className="absolute right-0 top-full mt-1 w-80 max-h-96 overflow-y-auto bg-base-100 border border-base-300 rounded-xl shadow-lg z-50 py-1">
             <div className="px-3 py-1.5 text-[11px] uppercase tracking-wider text-base-content/40 font-semibold">Resume conversation</div>
             {convs === null && <div className="px-3 py-4 flex justify-center"><span className="loading loading-spinner loading-sm" /></div>}
             {convs && convs.length === 0 && <div className="px-3 py-3 text-sm text-base-content/40">No past conversations</div>}
@@ -354,6 +380,7 @@ function ChatHeader({ anid, sid, aid, onResume }: { anid: string; sid: string; a
             })}
           </div>
         )}
+      </div>
     </div>
   );
 }
@@ -642,6 +669,25 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
   }, [anid, sid, setAttachment, removeAttachment]);
 
   const items = useMemo(() => buildThread(thread?.events ?? []), [thread?.events]);
+  // Short recap shown in the heading bar: the conversation's opening prompt,
+  // collapsed to a single line. Gives a glanceable "what is this about". Mirrors
+  // the agentnode's title derivation — skip synthetic context blocks the harness
+  // injects (<ide_opened_file>, <command-message>, …) and use the first real
+  // human text block, so the heading agrees with the resume picker's titles.
+  const recap = useMemo(() => {
+    const clean = (s: string) => s.trim().replace(/\s+/g, ' ');
+    for (const e of thread?.events ?? []) {
+      if (e.type !== 'acp_user') continue;
+      for (const b of e.blocks) {
+        const t = (b as { text?: unknown }).text;
+        if (typeof t === 'string' && t.trim() && !t.trim().startsWith('<')) return clean(t);
+      }
+    }
+    // Fallback for resumed history that arrives as user_message_chunk items.
+    const firstUser = items.find((it): it is Extract<ThreadItem, { kind: 'user' }> => it.kind === 'user');
+    const t = firstUser?.text.trim();
+    return t && !t.startsWith('<') ? clean(t) : null;
+  }, [thread?.events, items]);
   // Oldest→newest list of previously sent prompt texts, for ArrowUp/ArrowDown recall.
   const promptHistory = useMemo(() => {
     const out: string[] = [];
@@ -923,7 +969,7 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
       }}
       style={visible ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
     >
-      <ChatHeader anid={anid} sid={sid} aid={aidRef.current} onResume={beginResume} />
+      <ChatHeader anid={anid} sid={sid} aid={aidRef.current} recap={recap} onResume={beginResume} />
 
       {/* Thread */}
       <div className="relative flex-1 overflow-hidden">

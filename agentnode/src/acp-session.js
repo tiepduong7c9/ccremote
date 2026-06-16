@@ -411,19 +411,65 @@ class AcpSession {
 
   async listConversations() {
     const dir = this._projectDir();
-    let files;
-    try { files = await fs.promises.readdir(dir); } catch (_) { return []; }
-    const out = [];
-    for (const f of files) {
+    let names;
+    try { names = await fs.promises.readdir(dir); } catch (_) { return []; }
+    const files = [];
+    for (const f of names) {
       if (!f.endsWith('.jsonl')) continue;
       const full = path.join(dir, f);
       let stat;
       try { stat = await fs.promises.stat(full); } catch (_) { continue; }
       if (!stat.size) continue;
-      out.push({ sessionId: f.replace(/\.jsonl$/, ''), title: await this._readTitle(full), mtime: stat.mtimeMs });
+      files.push({ sessionId: f.replace(/\.jsonl$/, ''), full, mtime: stat.mtimeMs });
+    }
+    // Prefer the AI-generated title Claude Code shows in its own pickers (TUI /
+    // VS Code). They're persisted as {"type":"ai-title",...} lines, cross-written
+    // across the project's logs, so we scan all of them once. Sessions without
+    // one (degenerate/aborted) fall back to the opening prompt.
+    const titles = await this._readAiTitles(files);
+    const out = [];
+    for (const { sessionId, full, mtime } of files) {
+      out.push({ sessionId, title: titles.get(sessionId) || await this._readTitle(full), mtime });
     }
     out.sort((a, b) => b.mtime - a.mtime);
     return out;
+  }
+
+  // Scan every log for {"type":"ai-title","aiTitle","sessionId"} lines and map
+  // sessionId → title. Files are read oldest→newest so a regenerated title in a
+  // newer log overwrites an earlier one. The cheap substring guard avoids JSON
+  // parsing the vast majority of (non-title) lines.
+  async _readAiTitles(files) {
+    const map = new Map();
+    const ordered = [...files].sort((a, b) => a.mtime - b.mtime);
+    for (const { full } of ordered) {
+      let text;
+      try { text = await fs.promises.readFile(full, 'utf8'); } catch (_) { continue; }
+      if (!text.includes('"ai-title"')) continue;
+      for (const line of text.split('\n')) {
+        if (!line.includes('"ai-title"')) continue;
+        let o;
+        try { o = JSON.parse(line); } catch (_) { continue; }
+        if (o.type === 'ai-title' && o.sessionId && o.aiTitle) map.set(o.sessionId, String(o.aiTitle));
+      }
+    }
+    return map;
+  }
+
+  // Pull the first genuine human-typed text out of a user message's content,
+  // skipping synthetic context blocks the harness injects (<ide_opened_file>,
+  // <command-message>, <system-reminder>, …) and tool_result blocks. The real
+  // prompt is often the second text block of the first user message, after one
+  // of those wrappers — so scan all blocks rather than taking just the first.
+  static _firstHumanText(content) {
+    const ok = (s) => typeof s === 'string' && s.trim() && !s.trim().startsWith('<');
+    if (ok(content)) return content.trim();
+    if (Array.isArray(content)) {
+      for (const b of content) {
+        if (b && b.type === 'text' && ok(b.text)) return b.text.trim();
+      }
+    }
+    return '';
   }
 
   // Read just the head of a log to derive a human title (first real user line).
@@ -431,7 +477,10 @@ class AcpSession {
     let fd;
     try {
       fd = await fs.promises.open(file, 'r');
-      const buf = Buffer.alloc(65536);
+      // 256 KB: the opening prompt is sometimes preceded by a large injected
+      // context block (pasted text, an attachment), so a small head can cut off
+      // the first user line mid-JSON and miss the title entirely.
+      const buf = Buffer.alloc(262144);
       const { bytesRead } = await fd.read(buf, 0, buf.length, 0);
       const text = buf.slice(0, bytesRead).toString('utf8');
       for (const line of text.split('\n')) {
@@ -440,9 +489,8 @@ class AcpSession {
         try { o = JSON.parse(line); } catch (_) { continue; }
         if (o.type === 'summary' && o.summary) return String(o.summary).slice(0, 80);
         if (o.type === 'user' && o.message) {
-          const c = o.message.content;
-          const t = typeof c === 'string' ? c : (Array.isArray(c) ? ((c.find(x => x.type === 'text') || {}).text || '') : '');
-          if (t && !t.startsWith('<')) return t.replace(/\s+/g, ' ').slice(0, 80);
+          const t = AcpSession._firstHumanText(o.message.content);
+          if (t) return t.replace(/\s+/g, ' ').slice(0, 80);
         }
       }
     } catch (_) {
