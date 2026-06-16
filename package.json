@@ -12,5 +12,8 @@
     "setup":  "bash install.sh",
     "update": "bash install.sh --update"
   },
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=18" },
+  "overrides": {
+    "dompurify": "^3.4.10"
+  }
 }
