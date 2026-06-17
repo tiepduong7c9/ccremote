@@ -764,6 +764,26 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     prevLenRef.current = items.length;
   }, [items.length, working, sid]);
 
+  // Follow the bottom as content *grows in place*. A streaming reply appends to
+  // the same assistant item (see buildThread), so items.length never changes and
+  // the effect above can't fire — and late layout (markdown, code blocks, images)
+  // grows the content after any render. Watch the content's actual size and
+  // re-pin on every growth while the user is parked at the bottom, so the view
+  // tracks the reply as it streams; the moment they scroll up, stickRef goes
+  // false and we leave them where they are.
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const ro = new ResizeObserver(() => {
+      if (!stickRef.current) return;
+      el.scrollTop = el.scrollHeight;
+      scrollMemory.set(sid, el.scrollTop);
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [sid]);
+
   // Resuming a conversation from the history menu swaps the thread's contents
   // in place (same sid, no remount) via a single setHistory. Re-arm stick so
   // the layout effect above pins the new content to the bottom before paint,
@@ -809,52 +829,61 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
     // on the still-empty thread — it would lift the overlay right before the
     // history streams in and scrolls.
     const loading = thread?.historyLoading ?? false;
+    // Cap only guards the window *before* the first message arrives — e.g. an
+    // empty or failed resume that never streams anything. A large conversation
+    // can take far longer than this to replay, so once content starts arriving
+    // the cap is cleared and only the quiet-for-a-beat settle below lifts the
+    // overlay — otherwise the cap would fire mid-stream and expose the scroll.
+    let cap: ReturnType<typeof setTimeout> | null = setTimeout(() => setResuming(false), 12000);
     const arm = () => {
       if (stickRef.current) {
         el.scrollTop = el.scrollHeight;
         scrollMemory.set(sid, el.scrollTop);
       }
       const hasContent = !!content.querySelector('[class*="self-"]');
-      if (loading && !hasContent) return; // resume in flight, no messages yet — hold
+      if (loading && !hasContent) return; // resume in flight, no messages yet — hold (cap still armed)
+      if (cap) { clearTimeout(cap); cap = null; }
       if (settleTimer.current) clearTimeout(settleTimer.current);
-      settleTimer.current = setTimeout(() => setResuming(false), 200);
+      // Quiet for ~300ms (tolerant of inter-chunk gaps on slow/remote streams)
+      // → the thread has stopped growing, lift the overlay.
+      settleTimer.current = setTimeout(() => setResuming(false), 300);
     };
     const ro = new ResizeObserver(arm);
     ro.observe(content); // fires once immediately with the current size
-    // Hard cap so the overlay can never get stuck — longer while a resume may
-    // still be replaying so a slow round-trip doesn't expose the scroll.
-    const cap = setTimeout(() => setResuming(false), loading ? 12000 : 2500);
     return () => {
       ro.disconnect();
       if (settleTimer.current) clearTimeout(settleTimer.current);
-      clearTimeout(cap);
+      if (cap) clearTimeout(cap);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resuming, sid]);
 
-  // First load after the agentnode connects: the acp_history snapshot populates
-  // the thread in one shot, which would otherwise visibly scroll as the freshly
-  // loaded messages settle. Cover that with the same overlay. We key off the
-  // snapshot specifically (historyLoaded, set only by setHistory) rather than
-  // "thread defined" — a status/model event can create an empty thread via
-  // appendEvent *before* the history arrives, which would spend the one-shot
-  // guard on empty content and miss the real load. Switching to an
-  // already-loaded session (historyLoaded at mount) keeps its restored scroll
-  // position and needs no overlay; a brand-new conversation's snapshot is empty
-  // (no history to settle), so it gets none either.
-  const historyLoadedAtMountRef = useRef(thread?.historyLoaded === true);
-  const didInitialLoadRef = useRef(false);
+  // Cover the thread with the loading overlay whenever a history snapshot
+  // (re)loads — keyed off historyEpoch, which the store bumps on every
+  // setHistory: the first attach AND every re-attach (e.g. after an agentnode
+  // restart, including when you switch away and back to a session). A plain
+  // tab switch with no re-attach doesn't bump the epoch, so an already-loaded
+  // session keeps its restored scroll and gets no overlay.
+  //
+  // - First load into this panel (epoch goes undefined -> N): cover if there's
+  //   content to settle or a resume is still streaming in.
+  // - A later re-attach (epoch bumps again): only cover when the snapshot is a
+  //   resume that will re-stream (historyLoading) — a full one-shot snapshot
+  //   replaces content without the incremental scroll and should keep position.
+  const prevEpochRef = useRef(thread?.historyEpoch);
   useLayoutEffect(() => {
-    if (didInitialLoadRef.current) return;
-    if (historyLoadedAtMountRef.current) { didInitialLoadRef.current = true; return; }
-    if (!thread?.historyLoaded) return; // still waiting for the initial history snapshot
-    didInitialLoadRef.current = true;
-    // Cover the load when there's content to settle, or when a resume is still
-    // replaying — the snapshot is empty now but history streams in next, so the
-    // overlay (held by the settle effect) must be up before it arrives.
-    if (items.length > 0 || thread.historyLoading) beginResume();
+    const epoch = thread?.historyEpoch;
+    if (epoch === undefined) return;            // no snapshot received yet
+    const firstForPanel = prevEpochRef.current === undefined;
+    if (prevEpochRef.current === epoch) return; // not a new snapshot (e.g. tab switch)
+    prevEpochRef.current = epoch;
+    if (firstForPanel) {
+      if (items.length > 0 || thread?.historyLoading) beginResume();
+    } else if (thread?.historyLoading) {
+      beginResume();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread?.historyLoaded, items.length]);
+  }, [thread?.historyEpoch, items.length]);
 
   useEffect(() => {
     if (visible) taRef.current?.focus();
@@ -973,7 +1002,12 @@ export default function AcpThread({ anid, sid, visible = true }: Props) {
 
       {/* Thread */}
       <div className="relative flex-1 overflow-hidden">
-      <div ref={scrollRef} onScroll={onScroll} className="absolute inset-0 overflow-y-auto">
+      {/* overflow-anchor:none — when a large message block lays out in one jump
+          the browser's scroll anchoring would otherwise reposition scrollTop to
+          keep older content in view, firing a scroll event that flips stickRef
+          false and strands the user mid-thread. Disabling it keeps growth pinned
+          to the bottom (the ResizeObserver below does the following). */}
+      <div ref={scrollRef} onScroll={onScroll} className="absolute inset-0 overflow-y-auto [overflow-anchor:none]">
         <div ref={contentRef} className="min-h-full flex flex-col">
           <MessageList items={items} working={working} onAnswerPermission={answerPermission} />
         </div>
